@@ -1,0 +1,32 @@
+---
+title: Замыкания
+description: Как функция запоминает окружение, в котором была создана
+section: js
+order: 2
+level: middle
+tags: [functions, scope]
+---
+
+import Callout from '@/components/ui/Callout.astro';
+
+**Замыкание** — это функция вместе с лексическим окружением, в котором она была объявлена.
+
+```js
+function createCounter() {
+  let count = 0;
+  return () => ++count;
+}
+
+const next = createCounter();
+next(); // 1
+next(); // 2
+```
+
+<Callout type="tip">
+  Переменная `count` недоступна снаружи, но живёт, пока жива функция `next`.
+</Callout>
+
+## Задачи
+
+1. Напишите `once(fn)`, которая вызывает `fn` только один раз.
+2. Реализуйте `memoize(fn)` для функции одного аргумента.

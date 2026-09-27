@@ -1,0 +1,32 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import Card from '@/components/ui/Card.astro';
+import { sections, sectionIds } from '@/lib/sections';
+---
+
+<BaseLayout title="Обучение">
+  <div class="container page">
+    <h1>Обучение</h1>
+    <div class="grid">
+      {
+        sectionIds.map((id) => (
+          <Card title={sections[id].title} href={`/learn/${id}`}>
+            <p>{sections[id].description}</p>
+          </Card>
+        ))
+      }
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .page {
+    padding-top: var(--space-8);
+    padding-bottom: var(--space-12);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: var(--space-4);
+  }
+</style>

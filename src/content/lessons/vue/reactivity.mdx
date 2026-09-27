@@ -1,0 +1,22 @@
+---
+title: Реактивность
+description: ref, reactive и computed
+section: vue
+order: 1
+tags: [composition-api]
+---
+
+import Counter from '@/components/demos/vue/Counter.vue';
+
+`ref` делает значение реактивным, а `computed` пересчитывается при изменении зависимостей.
+
+```vue
+<script setup>
+const count = ref(0);
+const double = computed(() => count.value * 2);
+</script>
+```
+
+Живой пример:
+
+<Counter client:visible />

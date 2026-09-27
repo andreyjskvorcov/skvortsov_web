@@ -1,0 +1,51 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import Card from '@/components/ui/Card.astro';
+import { sections, sectionIds, type SectionId } from '@/lib/sections';
+
+export function getStaticPaths() {
+  return sectionIds.map((section) => ({ params: { section } }));
+}
+
+const section = Astro.params.section as SectionId;
+const lessons = (await getCollection('lessons', (l) => l.data.section === section && !l.data.draft)).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+---
+
+<BaseLayout title={sections[section].title} description={sections[section].description}>
+  <div class="container page">
+    <h1>{sections[section].title}</h1>
+    <p class="lead">{sections[section].description}</p>
+    {lessons.length === 0 && <p>Уроки скоро появятся.</p>}
+    <ol class="list">
+      {
+        lessons.map((l) => (
+          <li>
+            <Card title={l.data.title} href={`/learn/${l.id}`}>
+              <p>{l.data.description}</p>
+            </Card>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</BaseLayout>
+
+<style>
+  .page {
+    padding-top: var(--space-8);
+    padding-bottom: var(--space-12);
+  }
+  .lead {
+    color: var(--color-text-muted);
+  }
+  .list {
+    display: grid;
+    gap: var(--space-3);
+    margin: var(--space-6) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+</style>

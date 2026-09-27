@@ -1,0 +1,104 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import Button from '@/components/ui/Button.astro';
+import Card from '@/components/ui/Card.astro';
+import Badge from '@/components/ui/Badge.astro';
+import Callout from '@/components/ui/Callout.astro';
+
+const colors = ['bg', 'surface', 'border', 'text', 'text-muted', 'primary', 'info', 'success', 'warning', 'danger'];
+---
+
+<BaseLayout title="UI-kit" description="Витрина компонентов и дизайн-токенов">
+  <div class="container page">
+    <h1>UI-kit</h1>
+
+    <section>
+      <h2>Цвета</h2>
+      <div class="swatches">
+        {
+          colors.map((c) => (
+            <div class="swatch">
+              <span class="swatch__color" style={`background: var(--color-${c})`} />
+              <code>--color-{c}</code>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section>
+      <h2>Button</h2>
+      <div class="row">
+        <Button>Primary</Button>
+        <Button variant="secondary">Secondary</Button>
+        <Button variant="ghost">Ghost</Button>
+        <Button size="sm">Small</Button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Badge</h2>
+      <div class="row">
+        <Badge>neutral</Badge>
+        <Badge tone="info">info</Badge>
+        <Badge tone="success">success</Badge>
+        <Badge tone="warning">warning</Badge>
+        <Badge tone="danger">danger</Badge>
+      </div>
+    </section>
+
+    <section>
+      <h2>Card</h2>
+      <div class="cards">
+        <Card title="Обычная карточка"><p>Контент карточки.</p></Card>
+        <Card title="Карточка-ссылка" href="/learn"><p>Кликабельна целиком.</p></Card>
+      </div>
+    </section>
+
+    <section>
+      <h2>Callout</h2>
+      <Callout type="info"><p>Информационная заметка.</p></Callout>
+      <Callout type="tip"><p>Полезный совет.</p></Callout>
+      <Callout type="warning"><p>Обратите внимание.</p></Callout>
+      <Callout type="danger"><p>Так делать не стоит.</p></Callout>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  .page {
+    padding-top: var(--space-8);
+    padding-bottom: var(--space-12);
+  }
+  section {
+    margin-bottom: var(--space-12);
+  }
+  .row {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: var(--space-4);
+  }
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: var(--space-3);
+  }
+  .swatch {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .swatch__color {
+    width: 2rem;
+    height: 2rem;
+    flex: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+</style>

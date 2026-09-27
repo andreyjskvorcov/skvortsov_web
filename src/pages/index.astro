@@ -1,0 +1,56 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import Button from '@/components/ui/Button.astro';
+import Card from '@/components/ui/Card.astro';
+import { sections, sectionIds } from '@/lib/sections';
+---
+
+<BaseLayout title="Главная">
+  <section class="container hero">
+    <h1>Фронтенд: от основ до продакшена</h1>
+    <p>Уроки по JavaScript, Vue, React и вебу с живыми примерами, плюс собственный UI-kit.</p>
+    <div class="hero__actions">
+      <Button href="/learn">Начать учиться</Button>
+      <Button href="/ui-kit" variant="secondary">Смотреть UI-kit</Button>
+    </div>
+  </section>
+
+  <section class="container grid">
+    {
+      sectionIds.map((id) => (
+        <Card title={sections[id].title} href={`/learn/${id}`}>
+          <p>{sections[id].description}</p>
+        </Card>
+      ))
+    }
+  </section>
+</BaseLayout>
+
+<style>
+  .hero {
+    padding-top: var(--space-12);
+    padding-bottom: var(--space-8);
+  }
+  .hero h1 {
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-2xl);
+    line-height: 1.2;
+  }
+  .hero p {
+    max-width: 40rem;
+    color: var(--color-text-muted);
+    font-size: var(--text-lg);
+  }
+  .hero__actions {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-top: var(--space-6);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: var(--space-4);
+    padding-bottom: var(--space-12);
+  }
+</style>

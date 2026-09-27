@@ -1,0 +1,31 @@
+<button class="theme-toggle" type="button" aria-label="Переключить тему">
+  <span aria-hidden="true">◐</span>
+</button>
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>('.theme-toggle');
+
+  button?.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem('theme', next);
+    } catch {}
+  });
+</script>
+
+<style>
+  .theme-toggle {
+    padding: var(--space-1) var(--space-2);
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: var(--text-lg);
+    line-height: 1;
+    cursor: pointer;
+  }
+  .theme-toggle:hover {
+    border-color: var(--color-primary);
+  }
+</style>

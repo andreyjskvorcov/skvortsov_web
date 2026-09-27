@@ -1,0 +1,108 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from './BaseLayout.astro';
+import Badge from '@/components/ui/Badge.astro';
+import { sections, type SectionId } from '@/lib/sections';
+
+interface Props {
+  title: string;
+  description?: string;
+  section: SectionId;
+  level?: 'beginner' | 'middle' | 'advanced';
+}
+
+const { title, description, section, level } = Astro.props;
+
+const lessons = (await getCollection('lessons', (l) => l.data.section === section && !l.data.draft)).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+
+const path = Astro.url.pathname.replace(/\/$/, '');
+const index = lessons.findIndex((l) => `/learn/${l.id}` === path);
+const prev = index > 0 ? lessons[index - 1] : undefined;
+const next = index >= 0 ? lessons[index + 1] : undefined;
+
+const levels = { beginner: 'Начальный', middle: 'Средний', advanced: 'Продвинутый' };
+---
+
+<BaseLayout title={title} description={description}>
+  <div class="container docs">
+    <nav class="docs__sidebar" aria-label={`Уроки: ${sections[section].title}`}>
+      <p class="docs__section">
+        <a href={`/learn/${section}`}>{sections[section].title}</a>
+      </p>
+      <ol>
+        {
+          lessons.map((l) => (
+            <li>
+              <a href={`/learn/${l.id}`} aria-current={`/learn/${l.id}` === path ? 'page' : undefined}>
+                {l.data.title}
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+    </nav>
+
+    <article class="docs__content">
+      <h1>{title}</h1>
+      {level && <Badge tone="info">{levels[level]}</Badge>}
+      <slot />
+
+      <nav class="docs__pager" aria-label="Соседние уроки">
+        {prev ? <a href={`/learn/${prev.id}`}>← {prev.data.title}</a> : <span />}
+        {next && <a href={`/learn/${next.id}`}>{next.data.title} →</a>}
+      </nav>
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .docs {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    gap: var(--space-12);
+    padding-top: var(--space-8);
+    padding-bottom: var(--space-12);
+  }
+  .docs__sidebar ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .docs__sidebar li a {
+    display: block;
+    padding: var(--space-1) 0;
+    color: var(--color-text-muted);
+    text-decoration: none;
+  }
+  .docs__sidebar li a[aria-current='page'] {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+  .docs__section a {
+    font-weight: 700;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .docs__content {
+    max-width: 48rem;
+  }
+  .docs__content h1 {
+    margin-top: 0;
+  }
+  .docs__pager {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-top: var(--space-12);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--color-border);
+  }
+  @media (max-width: 48rem) {
+    .docs {
+      grid-template-columns: 1fr;
+      gap: var(--space-6);
+    }
+  }
+</style>

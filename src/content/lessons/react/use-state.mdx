@@ -1,0 +1,20 @@
+---
+title: useState
+description: Локальное состояние компонента
+section: react
+order: 1
+tags: [hooks]
+---
+
+import Counter from '@/components/demos/react/Counter.tsx';
+
+`useState` возвращает текущее значение и функцию для его обновления.
+
+```jsx
+const [count, setCount] = useState(0);
+setCount((c) => c + 1);
+```
+
+Живой пример:
+
+<Counter client:visible />
