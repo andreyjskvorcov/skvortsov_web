@@ -1,0 +1,47 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+// Единственный источник — GUIDE.md в корне проекта: его же читают в IDE и в репозитории
+import * as guide from '../../GUIDE.md';
+
+const headings = guide.getHeadings().filter((h) => h.depth === 2 && h.slug !== 'содержание');
+
+const html = (await guide.compiledContent())
+  // h1 выводим сами, а оглавление дублирует сайдбар
+  .replace(/<h1[^>]*>.*?<\/h1>/s, '')
+  .replace(/<h2 id="содержание">.*?(?=<h2)/s, '')
+  // Ссылки на файлы репозитория на сайте не открываются — оставляем только текст
+  .replace(/<a href="(?!https?:|#|\/)[^"]*">(.*?)<\/a>/gs, '$1');
+---
+
+<BaseLayout title="Гайд" description="Как устроен проект и как с ним работать">
+  <div class="page-container grid gap-6 pt-8 pb-12 md:grid-cols-[15rem_minmax(0,1fr)] md:gap-12">
+    <nav class="md:sticky md:top-8 md:self-start" aria-label="Разделы гайда">
+      <p class="mb-2 font-bold">Разделы</p>
+      <ol>
+        {
+          headings.map((h) => (
+            <li>
+              <a
+                class="block py-1 text-muted-foreground no-underline transition-colors hover:text-foreground"
+                href={`#${h.slug}`}
+              >
+                {h.text}
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+    </nav>
+
+    <article class="min-w-0">
+      <h1>Гайд по проекту</h1>
+      <p class="text-muted-foreground">
+        Как устроен сайт, как добавлять уроки, проекты и компоненты, что можно и чего нельзя.
+      </p>
+      <div
+        class="prose mt-6 max-w-none [&_:is(h2,h3,h4)]:scroll-mt-6 [&_table]:block [&_table]:overflow-x-auto"
+        set:html={html}
+      />
+    </article>
+  </div>
+</BaseLayout>
