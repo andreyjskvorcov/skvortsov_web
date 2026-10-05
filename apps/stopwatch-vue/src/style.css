@@ -1,0 +1,19 @@
+@import 'tailwindcss';
+/* Токены и тёмная тема — общие с сайтом */
+@import '../../../src/styles/tokens.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  [data-theme='dark'] {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background p-6 font-sans text-foreground;
+  }
+}

@@ -1,0 +1,19 @@
+---
+title: Todo на React
+description: Самостоятельное Vite-приложение на React, которое использует shadcn/ui из UI-kit сайта
+stack: react
+type: app
+order: 1
+tags: [shadcn, tailwind, useState]
+---
+
+## Как устроено
+
+Исходники лежат в `apps/todo-react/` — отдельный Vite-проект со своим `package.json`, собирается в `public/apps/todo-react/`.
+
+При этом приложение пользуется UI-kit сайта:
+
+- в `vite.config.ts` алиас `@` указывает на `src` сайта, поэтому работают импорты вида `@/components/ui/button`;
+- `style.css` подключает Tailwind, общие токены `src/styles/tokens.css` и через `@source` — классы компонентов из `src/components/ui`.
+
+Так можно подключать кит к любому React-приложению из `apps/`, не встраивая его в Astro.

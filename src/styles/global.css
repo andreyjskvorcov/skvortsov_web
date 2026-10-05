@@ -3,6 +3,9 @@
 @plugin '@tailwindcss/typography';
 @import './tokens.css';
 
+/* Самостоятельные приложения со своими стилями — классы из них не собираем */
+@source not '../../apps';
+
 /* dark: срабатывает от data-theme, который ставит ThemeToggle */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 

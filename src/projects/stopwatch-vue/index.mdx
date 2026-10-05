@@ -1,0 +1,16 @@
+---
+title: Секундомер на Vue
+description: Самостоятельное Vite-приложение на Vue, оформленное токенами и Tailwind сайта
+stack: vue
+type: app
+order: 2
+tags: [composition-api, tailwind]
+---
+
+## Как устроено
+
+Исходники лежат в `apps/stopwatch-vue/` — отдельный Vite-проект, собирается в `public/apps/stopwatch-vue/`.
+
+Компоненты shadcn/ui написаны на React, поэтому во Vue-приложении используются не они, а общие токены
+`src/styles/tokens.css` и Tailwind-классы (`bg-primary`, `bg-card`, `text-muted-foreground`, …):
+внешний вид и тёмная тема совпадают с сайтом.

@@ -1,0 +1,29 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import LinkCard from '@/components/blocks/LinkCard.astro';
+import { projectTypes, stacks } from '@/lib/projects';
+
+const projects = (await getCollection('projects', (p) => !p.data.draft)).sort((a, b) => a.data.order - b.data.order);
+---
+
+<BaseLayout title="Проекты" description="Живые проекты на React и Vue">
+  <div class="page-container pt-8 pb-12">
+    <h1>Проекты</h1>
+    <p class="mb-6 max-w-2xl text-muted-foreground">
+      Живые проекты: острова на React и Vue прямо на странице и самостоятельные приложения во встроенном окне.
+    </p>
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-4">
+      {
+        projects.map((p) => (
+          <LinkCard
+            title={p.data.title}
+            description={p.data.description}
+            href={`/projects/${p.id}`}
+            badges={[stacks[p.data.stack], projectTypes[p.data.type]]}
+          />
+        ))
+      }
+    </div>
+  </div>
+</BaseLayout>

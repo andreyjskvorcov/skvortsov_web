@@ -1,13 +1,15 @@
 ---
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface Props {
   title: string;
   href: string;
   description?: string;
+  badges?: string[];
 }
 
-const { title, href, description } = Astro.props;
+const { title, href, description, badges = [] } = Astro.props;
 ---
 
 <a class="group block h-full no-underline" href={href}>
@@ -16,5 +18,14 @@ const { title, href, description } = Astro.props;
       <CardTitle>{title}</CardTitle>
       {description && <CardDescription>{description}</CardDescription>}
     </CardHeader>
+    {
+      badges.length > 0 && (
+        <CardFooter className="mt-auto flex-wrap gap-2">
+          {badges.map((b) => (
+            <Badge variant="outline">{b}</Badge>
+          ))}
+        </CardFooter>
+      )
+    }
   </Card>
 </a>

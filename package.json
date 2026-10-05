@@ -6,9 +6,15 @@
   "engines": {
     "node": "^20.3.0 || >=22.0.0"
   },
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
+    "predev": "npm run build:apps",
     "dev": "astro dev",
+    "prebuild": "npm run build:apps",
     "build": "astro build",
+    "build:apps": "npm run build --workspaces --if-present",
     "preview": "astro preview",
     "check": "astro check",
     "astro": "astro"
