@@ -1,0 +1,24 @@
+---
+import { SunMoon } from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
+---
+
+<button
+  class:list={['theme-toggle', buttonVariants({ variant: 'outline', size: 'icon' })]}
+  type="button"
+  aria-label="Переключить тему"
+>
+  <SunMoon aria-hidden="true" />
+</button>
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>('.theme-toggle');
+
+  button?.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem('theme', next);
+    } catch {}
+  });
+</script>

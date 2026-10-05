@@ -1,22 +1,12 @@
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 
 export default function Counter() {
   const [count, setCount] = useState(0);
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 'var(--space-4)',
-        alignItems: 'center',
-        padding: 'var(--space-4)',
-        border: '1px dashed var(--color-border)',
-        borderRadius: 'var(--radius-md)',
-      }}
-    >
-      <button type="button" onClick={() => setCount((c) => c + 1)} style={{ font: 'inherit', cursor: 'pointer' }}>
-        Кликов: {count}
-      </button>
+    <div className="not-prose flex items-center gap-4 rounded-lg border border-dashed p-4">
+      <Button onClick={() => setCount((c) => c + 1)}>Кликов: {count}</Button>
       <span>Удвоенное: {count * 2}</span>
     </div>
   );

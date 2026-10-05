@@ -1,7 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 import BaseLayout from '@/layouts/BaseLayout.astro';
-import Card from '@/components/ui/Card.astro';
+import LinkCard from '@/components/blocks/LinkCard.astro';
 import { sections, sectionIds, type SectionId } from '@/lib/sections';
 
 export function getStaticPaths() {
@@ -15,37 +15,18 @@ const lessons = (await getCollection('lessons', (l) => l.data.section === sectio
 ---
 
 <BaseLayout title={sections[section].title} description={sections[section].description}>
-  <div class="container page">
+  <div class="page-container pt-8 pb-12">
     <h1>{sections[section].title}</h1>
-    <p class="lead">{sections[section].description}</p>
-    {lessons.length === 0 && <p>Уроки скоро появятся.</p>}
-    <ol class="list">
+    <p class="text-muted-foreground">{sections[section].description}</p>
+    {lessons.length === 0 && <p class="mt-6">Уроки скоро появятся.</p>}
+    <ol class="mt-6 grid gap-3">
       {
         lessons.map((l) => (
           <li>
-            <Card title={l.data.title} href={`/learn/${l.id}`}>
-              <p>{l.data.description}</p>
-            </Card>
+            <LinkCard title={l.data.title} description={l.data.description} href={`/learn/${l.id}`} />
           </li>
         ))
       }
     </ol>
   </div>
 </BaseLayout>
-
-<style>
-  .page {
-    padding-top: var(--space-8);
-    padding-bottom: var(--space-12);
-  }
-  .lead {
-    color: var(--color-text-muted);
-  }
-  .list {
-    display: grid;
-    gap: var(--space-3);
-    margin: var(--space-6) 0 0;
-    padding: 0;
-    list-style: none;
-  }
-</style>

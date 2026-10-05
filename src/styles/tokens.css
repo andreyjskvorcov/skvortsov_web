@@ -1,54 +1,91 @@
+/*
+  Дизайн-токены в схеме shadcn/ui: компоненты из components/ui ссылаются на эти имена.
+  Значения переключаются по data-theme, а @theme inline превращает их в утилиты
+  (bg-background, text-muted-foreground, border-border, bg-primary, …).
+*/
 :root {
-  /* Цвета */
-  --color-bg: #ffffff;
-  --color-surface: #f5f6f8;
-  --color-border: #e2e4e9;
-  --color-text: #16181d;
-  --color-text-muted: #5b606b;
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-on-primary: #ffffff;
-  --color-info: #0369a1;
-  --color-success: #15803d;
-  --color-warning: #b45309;
-  --color-danger: #b91c1c;
+  --radius: 0.625rem;
 
-  /* Типографика */
-  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.5rem;
-  --text-2xl: 2.25rem;
+  --background: #ffffff;
+  --foreground: #16181d;
+  --card: #f5f6f8;
+  --card-foreground: #16181d;
+  --popover: #ffffff;
+  --popover-foreground: #16181d;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --secondary: #eef0f3;
+  --secondary-foreground: #16181d;
+  --muted: #f5f6f8;
+  --muted-foreground: #5b606b;
+  --accent: #eef0f3;
+  --accent-foreground: #16181d;
+  --destructive: #b91c1c;
+  --border: #e2e4e9;
+  --input: #e2e4e9;
+  --ring: #4f46e5;
 
-  /* Отступы */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
-  --space-12: 3rem;
-
-  /* Прочее */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
-  --content-width: 72rem;
+  /* Статусы — своё расширение, в shadcn есть только destructive */
+  --info: #0369a1;
+  --success: #15803d;
+  --warning: #b45309;
 }
 
 [data-theme='dark'] {
-  --color-bg: #0f1115;
-  --color-surface: #171a21;
-  --color-border: #2a2e37;
-  --color-text: #e8eaee;
-  --color-text-muted: #9aa0ab;
-  --color-primary: #818cf8;
-  --color-primary-hover: #a5b4fc;
-  --color-on-primary: #0f1115;
-  --color-info: #38bdf8;
-  --color-success: #4ade80;
-  --color-warning: #fbbf24;
-  --color-danger: #f87171;
+  --background: #0f1115;
+  --foreground: #e8eaee;
+  --card: #171a21;
+  --card-foreground: #e8eaee;
+  --popover: #171a21;
+  --popover-foreground: #e8eaee;
+  --primary: #818cf8;
+  --primary-foreground: #0f1115;
+  --secondary: #222631;
+  --secondary-foreground: #e8eaee;
+  --muted: #171a21;
+  --muted-foreground: #9aa0ab;
+  --accent: #222631;
+  --accent-foreground: #e8eaee;
+  --destructive: #f87171;
+  --border: #2a2e37;
+  --input: #2a2e37;
+  --ring: #818cf8;
+
+  --info: #38bdf8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-info: var(--info);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@theme {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }

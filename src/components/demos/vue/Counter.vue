@@ -6,24 +6,14 @@ const double = computed(() => count.value * 2);
 </script>
 
 <template>
-  <div class="demo">
-    <button type="button" @click="count++">Кликов: {{ count }}</button>
+  <div class="not-prose flex items-center gap-4 rounded-lg border border-dashed p-4">
+    <button
+      type="button"
+      class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+      @click="count++"
+    >
+      Кликов: {{ count }}
+    </button>
     <span>Удвоенное: {{ double }}</span>
   </div>
 </template>
-
-<style scoped>
-.demo {
-  display: flex;
-  gap: var(--space-4);
-  align-items: center;
-  padding: var(--space-4);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-}
-button {
-  padding: var(--space-2) var(--space-4);
-  font: inherit;
-  cursor: pointer;
-}
-</style>

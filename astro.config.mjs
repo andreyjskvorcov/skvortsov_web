@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import tailwindcss from '@tailwindcss/vite';
 
 import vue from '@astrojs/vue';
 import react from '@astrojs/react';
@@ -12,9 +13,12 @@ export default defineConfig({
   site: 'https://skvortsov.dev',
   integrations: [
     vue(),
-    // React-компоненты живут только в demos/react, чтобы не конфликтовать с Vue
-    react({ include: ['**/react/**'] }),
+    // JSX/TSX обрабатывает только React: Vue-компоненты пишутся в .vue без JSX
+    react(),
     mdx(),
     sitemap(),
   ],
+  vite: {
+    plugins: [tailwindcss()],
+  },
 });
