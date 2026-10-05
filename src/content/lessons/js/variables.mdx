@@ -6,6 +6,8 @@ order: 1
 tags: [basics]
 ---
 
+import Quiz from '@/components/blocks/Quiz.tsx';
+
 В JavaScript 7 примитивов: `string`, `number`, `bigint`, `boolean`, `undefined`, `symbol`, `null`, а всё остальное — объекты.
 
 ```js
@@ -13,3 +15,47 @@ const name = 'Andrey'; // нельзя переприсвоить
 let age = 30; // можно переприсвоить
 typeof null; // 'object' — историческая ошибка языка
 ```
+
+## Проверь себя
+
+<Quiz client:visible id="js/variables/typeof-null" options={["'null'", "'object'", "'undefined'", 'TypeError']} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  typeof null;
+  ```
+
+  <Fragment slot="explanation">
+    `typeof null` возвращает `'object'` — это ошибка из первой версии языка, которую не исправили ради совместимости.
+    Проверять на `null` нужно строгим сравнением: `value === null`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/tdz" options={['undefined', '1', 'ReferenceError', 'null']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  console.log(a);
+  let a = 1;
+  ```
+
+  <Fragment slot="explanation">
+    `let` и `const` тоже поднимаются, но до строки объявления находятся во «временной мёртвой зоне» (TDZ):
+    обращение к ним бросает `ReferenceError`. С `var` здесь был бы `undefined`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/const-object" options={["'Аня'", "'Борис'", 'TypeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const user = { name: 'Аня' };
+  user.name = 'Борис';
+  console.log(user.name);
+  ```
+
+  <Fragment slot="explanation">
+    `const` запрещает переприсвоить саму переменную (`user = {}`), но не изменять объект, на который она ссылается.
+    Чтобы запретить изменение свойств, используйте `Object.freeze(user)`.
+  </Fragment>
+</Quiz>

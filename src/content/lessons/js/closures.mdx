@@ -8,6 +8,8 @@ tags: [functions, scope]
 ---
 
 import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
 
 **Замыкание** — это функция вместе с лексическим окружением, в котором она была объявлена.
 
@@ -26,7 +28,125 @@ next(); // 2
   Переменная `count` недоступна снаружи, но живёт, пока жива функция `next`.
 </Callout>
 
+## Проверь себя
+
+<Quiz client:visible id="js/closures/var-loop" options={['0 1 2', '3 3 3', '2 2 2', 'undefined undefined undefined']} answer={1}>
+  Что выведет код?
+
+  ```js
+  for (var i = 0; i < 3; i++) {
+    setTimeout(() => console.log(i));
+  }
+  ```
+
+  <Fragment slot="explanation">
+    У `var` одна переменная `i` на всю функцию, и все три колбэка замыкают именно её.
+    Колбэки выполняются после цикла, когда `i` уже равна `3`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/closures/let-loop" options={['0 1 2', '3 3 3', '2 2 2', 'undefined undefined undefined']} answer={0}>
+  А если заменить `var` на `let`?
+
+  ```js
+  for (let i = 0; i < 3; i++) {
+    setTimeout(() => console.log(i));
+  }
+  ```
+
+  <Fragment slot="explanation">
+    `let` в заголовке цикла создаёт новую переменную `i` на каждой итерации, поэтому каждый колбэк замыкает своё значение.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/closures/independent-counters" options={['1', '2', '3', 'undefined']} answer={0}>
+  Что выведет код? `createCounter` — из примера выше.
+
+  ```js
+  const a = createCounter();
+  const b = createCounter();
+  a();
+  a();
+  console.log(b());
+  ```
+
+  <Fragment slot="explanation">
+    Каждый вызов `createCounter` создаёт новое лексическое окружение со своей переменной `count`.
+    Счётчики `a` и `b` друг о друге не знают, поэтому первый вызов `b()` возвращает `1`.
+  </Fragment>
+</Quiz>
+
 ## Задачи
 
-1. Напишите `once(fn)`, которая вызывает `fn` только один раз.
-2. Реализуйте `memoize(fn)` для функции одного аргумента.
+<Task title="once(fn)" level="easy">
+  Напишите функцию `once(fn)`, которая возвращает обёртку над `fn`: обёртка вызывает `fn` только при первом вызове,
+  а дальше возвращает тот же результат.
+
+  ```js
+  const init = once(() => console.log('init') ?? 42);
+  init(); // 'init', 42
+  init(); // 42 — без повторного вызова
+  ```
+
+  <Fragment slot="hint">
+    Храните в замыкании флаг «уже вызывали» и сохранённый результат.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function once(fn) {
+      let called = false;
+      let result;
+
+      return function (...args) {
+        if (!called) {
+          called = true;
+          result = fn.apply(this, args);
+        }
+        return result;
+      };
+    }
+    ```
+
+    Переменные `called` и `result` живут в замыкании обёртки и недоступны снаружи.
+    `fn.apply(this, args)` сохраняет контекст и аргументы, поэтому `once` можно использовать и для методов объекта.
+  </Fragment>
+</Task>
+
+<Task title="memoize(fn)" level="medium">
+  Реализуйте `memoize(fn)` для функции одного аргумента: повторный вызов с тем же аргументом
+  должен возвращать результат из кэша, не вызывая `fn`.
+
+  ```js
+  const square = memoize((n) => {
+    console.log('считаю', n);
+    return n * n;
+  });
+
+  square(4); // 'считаю 4', 16
+  square(4); // 16 — из кэша
+  ```
+
+  <Fragment slot="hint">
+    Кэш — это `Map` в замыкании: ключ — аргумент, значение — результат.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function memoize(fn) {
+      const cache = new Map();
+
+      return (arg) => {
+        if (!cache.has(arg)) {
+          cache.set(arg, fn(arg));
+        }
+        return cache.get(arg);
+      };
+    }
+    ```
+
+    `Map` подходит лучше обычного объекта: ключом может быть значение любого типа,
+    и `1` с `'1'` не склеятся в один ключ. Проверка через `has`, а не через `get`, нужна,
+    чтобы кэшировались и результаты `undefined`.
+  </Fragment>
+</Task>

@@ -1,0 +1,52 @@
+---
+import { ChevronDown, Lightbulb } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
+
+interface Props {
+  title: string;
+  level?: 'easy' | 'medium' | 'hard';
+}
+
+const { title, level } = Astro.props;
+const levels = { easy: 'Лёгкая', medium: 'Средняя', hard: 'Сложная' };
+
+// <details> раскрывается без JS; маркер браузера прячем, вид — как у кнопки
+const summary = `${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-pointer list-none [&::-webkit-details-marker]:hidden`;
+---
+
+<section class="my-6 rounded-xl border bg-card px-5 py-4 text-card-foreground">
+  <div class="not-prose flex flex-wrap items-center gap-2">
+    <Badge variant="secondary">Задача</Badge>
+    {level && <Badge variant="outline">{levels[level]}</Badge>}
+    <h3 class="m-0 text-base font-semibold">{title}</h3>
+  </div>
+
+  <div class="mt-1"><slot /></div>
+
+  <div class="flex flex-col gap-3">
+    {
+      Astro.slots.has('hint') && (
+        <details class="group">
+          <summary class={summary}>
+            <Lightbulb /> Подсказка
+          </summary>
+          <div class="mt-1">
+            <slot name="hint" />
+          </div>
+        </details>
+      )
+    }
+
+    <details class="group">
+      <summary class={summary}>
+        <span class="group-open:hidden">Показать ответ</span>
+        <span class="hidden group-open:inline">Скрыть ответ</span>
+        <ChevronDown className="transition-transform group-open:rotate-180" />
+      </summary>
+      <div class="mt-1">
+        <slot name="solution" />
+      </div>
+    </details>
+  </div>
+</section>
