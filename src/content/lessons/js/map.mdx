@@ -1,0 +1,534 @@
+---
+title: Метод map
+description: Преобразование массива через map — синтаксис, return и объекты, неизменяемость, thisArg, async map и Promise.all
+section: js
+order: 15
+level: beginner
+tags: [arrays, map, callbacks, promises]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+`map` создаёт **новый массив**, в котором каждый элемент — результат колбэка для соответствующего элемента исходного.
+Исходный массив при этом не меняется.
+
+```js
+const prices = [100, 250, 400];
+const withTax = prices.map((price) => price * 1.2);
+
+console.log(withTax); // [120, 300, 480]
+console.log(prices); // [100, 250, 400] — без изменений
+```
+
+Главное отличие от [`forEach`](/learn/js/foreach): `forEach` просто **делает что-то** с каждым элементом,
+а `map` **превращает** каждый элемент во что-то новое и собирает результаты в массив.
+
+## Синтаксис
+
+```js
+const newArray = array.map((element, index, array) => {
+  return новоеЗначение;
+}, thisArg);
+```
+
+- колбэк получает те же три аргумента, что и в `forEach`: элемент, индекс, весь массив;
+- значение, которое колбэк **возвращает**, становится элементом нового массива;
+- `thisArg` — необязательный второй аргумент `map`, о нём ниже.
+
+Длина результата **всегда равна** длине исходного массива: `map` преобразует, но не убирает и не добавляет элементы.
+
+## Примеры
+
+```js
+// Числа
+[1, 2, 3].map((n) => n ** 2); // [1, 4, 9]
+
+// Строки
+['анна', 'иван'].map((name) => name[0].toUpperCase() + name.slice(1)); // ['Анна', 'Иван']
+
+// С индексом
+['Хлеб', 'Молоко'].map((item, i) => `${i + 1}. ${item}`); // ['1. Хлеб', '2. Молоко']
+
+// Достать одно поле из массива объектов
+const users = [
+  { id: 1, name: 'Аня', age: 25 },
+  { id: 2, name: 'Иван', age: 17 },
+];
+
+users.map((user) => user.name); // ['Аня', 'Иван']
+users.map((user) => user.id); // [1, 2]
+```
+
+### Преобразовать объекты
+
+Чаще всего `map` превращает одни объекты в другие — например, данные с сервера в то, что нужно показать:
+
+```js
+const cards = users.map((user) => ({
+  id: user.id,
+  title: user.name,
+  badge: user.age >= 18 ? 'взрослый' : 'подросток',
+}));
+// [
+//   { id: 1, title: 'Аня', badge: 'взрослый' },
+//   { id: 2, title: 'Иван', badge: 'подросток' },
+// ]
+```
+
+<Callout type="warning">
+  Объект в короткой стрелочной функции нужно обернуть в **круглые скобки**: `(user) => ({ … })`.
+  Без них `{` начинает тело функции, и `map` вернёт массив из `undefined`.
+</Callout>
+
+## Не забывайте return
+
+Если у колбэка фигурные скобки, значение нужно вернуть явно:
+
+```js
+[1, 2, 3].map((n) => {
+  n * 2;
+}); // [undefined, undefined, undefined] — функция ничего не вернула
+
+[1, 2, 3].map((n) => {
+  return n * 2;
+}); // [2, 4, 6]
+
+[1, 2, 3].map((n) => n * 2); // [2, 4, 6] — короткая запись возвращает значение сама
+```
+
+## Не меняйте исходные объекты
+
+`map` создаёт новый **массив**, но если колбэк меняет объекты-элементы, изменятся и исходные данные:
+
+```js
+const users = [{ name: 'Аня', active: false }];
+
+// ❌ меняет исходный объект и возвращает его же
+const activated = users.map((user) => {
+  user.active = true;
+  return user;
+});
+
+console.log(users[0].active); // true — исходный массив «испорчен»
+```
+
+Правильно — вернуть **новый объект** с изменённым полем:
+
+```js
+const activated = users.map((user) => ({ ...user, active: true }));
+
+console.log(users[0].active); // false — исходные данные не тронуты
+```
+
+Подробнее о копировании объектов — в уроке [Spread и rest](/learn/js/spread).
+
+## map не фильтрует
+
+`map` всегда возвращает массив той же длины. Если колбэк для части элементов ничего не возвращает,
+на их месте окажется `undefined`:
+
+```js
+[1, 2, 3, 4].map((n) => {
+  if (n > 2) return n;
+}); // [undefined, undefined, 3, 4]
+```
+
+Чтобы отобрать часть элементов, нужен `filter` — а уже потом `map`:
+
+```js
+[1, 2, 3, 4].filter((n) => n > 2).map((n) => n * 10); // [30, 40]
+```
+
+Сначала `filter`, потом `map` — так преобразуются только нужные элементы, без лишней работы.
+
+## Аргументы колбэка: ловушка с parseInt
+
+`map` передаёт в колбэк три аргумента, и если передать туда функцию с собственными параметрами, результат может удивить:
+
+```js
+['1', '2', '3'].map(parseInt); // [1, NaN, NaN]
+['1', '2', '3'].map(Number); // [1, 2, 3]
+['1', '2', '3'].map((s) => parseInt(s, 10)); // [1, 2, 3]
+```
+
+`parseInt` воспринимает индекс как систему счисления. Подробный разбор — в уроке [Колбэки](/learn/js/callbacks).
+
+## thisArg
+
+Второй аргумент `map` задаёт, чему будет равен `this` внутри колбэка:
+
+```js
+const array = [1, 2, 3];
+const thisArg = { offset: 1 };
+
+const callback = function (element, index, array) {
+  return element + index + array.length + this.offset;
+};
+
+const result = array.map(callback, thisArg);
+console.log(result.join(', ')); // 5, 7, 9
+// 1 + 0 + 3 + 1 = 5, 2 + 1 + 3 + 1 = 7, 3 + 2 + 3 + 1 = 9
+```
+
+<Callout type="warning">
+  `thisArg` работает только с колбэком, объявленным через `function`. У стрелочной функции своего `this` нет —
+  она берёт его снаружи, и `thisArg` просто игнорируется.
+</Callout>
+
+В современном коде `thisArg` встречается редко: проще использовать стрелочную функцию и обратиться к нужному объекту
+напрямую — через замыкание:
+
+```js
+const thisArg = { offset: 1 };
+
+const result = array.map((element, index, arr) => element + index + arr.length + thisArg.offset);
+// [5, 7, 9] — тот же результат, без this
+```
+
+## Асинхронный map
+
+Если колбэк асинхронный, `map` вернёт массив **промисов**, а не значений:
+
+```js
+const asyncDouble = (num) =>
+  new Promise((resolve) => {
+    setTimeout(() => resolve(num * 2), 1000);
+  });
+
+const promises = [1, 2, 3].map(asyncDouble);
+console.log(promises); // [Promise, Promise, Promise] — результатов ещё нет
+```
+
+Чтобы дождаться всех результатов, массив промисов передают в `Promise.all`:
+
+```js
+const myNumbers = [1, 2, 3];
+
+async function processMyNumbers() {
+  const promises = myNumbers.map(asyncDouble);
+  const results = await Promise.all(promises);
+
+  console.log(results); // [2, 4, 6] — через 1 секунду, а не через 3
+}
+
+processMyNumbers();
+```
+
+`map` запускает все три задачи **сразу**, и они идут параллельно — поэтому общее время равно самой долгой задаче,
+около секунды. `Promise.all` возвращает результаты в том же порядке, что и исходный массив, даже если задачи
+закончатся в другом порядке.
+
+<Callout type="info">
+  Если хотя бы один промис завершится ошибкой, `Promise.all` сразу отклонится с этой ошибкой. Когда нужно получить
+  результаты всех задач, включая неудачные, используют `Promise.allSettled`.
+</Callout>
+
+## Проверь себя
+
+<Quiz client:visible id="js/map/this-arg" options={["'5, 7, 9'", "'2, 3, 4'", "'NaN, NaN, NaN'", "'4, 6, 8'"]} answer={0}>
+  Что выведет код?
+
+  ```js
+  const callback = function (element, index, array) {
+    return element + index + array.length + this.offset;
+  };
+
+  console.log([1, 2, 3].map(callback, { offset: 1 }).join(', '));
+  ```
+
+  <Fragment slot="explanation">
+    `this` внутри обычной функции — объект `{ offset: 1 }` из второго аргумента `map`.
+    Для каждого элемента: `1 + 0 + 3 + 1 = 5`, `2 + 1 + 3 + 1 = 7`, `3 + 2 + 3 + 1 = 9`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/map/arrow-this-arg"
+  options={['thisArg — объект { offset: 1 }', 'Внешний this — thisArg игнорируется', 'Сам массив', 'Текущий элемент']}
+  answer={1}
+>
+  Чему равен `this` внутри колбэка?
+
+  ```js
+  [1, 2, 3].map((element) => element + this.offset, { offset: 1 });
+  ```
+
+  <Fragment slot="explanation">
+    У стрелочной функции нет собственного `this` — она берёт его из места, где объявлена. Второй аргумент `map`
+    на неё не влияет. В модуле внешний `this` — `undefined`, и обращение `this.offset` даже бросит `TypeError`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/map/no-return" options={['[2, 4, 6]', '[1, 2, 3]', '[undefined, undefined, undefined]', 'undefined']} answer={2}>
+  Что вернёт выражение?
+
+  ```js
+  [1, 2, 3].map((n) => {
+    n * 2;
+  });
+  ```
+
+  <Fragment slot="explanation">
+    В колбэке с фигурными скобками нет `return`, поэтому каждый вызов возвращает `undefined`. Но `map` всё равно
+    собирает результаты — получается массив из трёх `undefined`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/map/object-literal" options={['[{ value: 1 }, { value: 2 }]', '[undefined, undefined]', '[1, 2]', 'SyntaxError']} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  [1, 2].map((n) => { value: n });
+  ```
+
+  <Fragment slot="explanation">
+    Фигурные скобки после `=>` — тело функции, а `value:` внутри — метка, а не ключ объекта. `return` нет — получается `undefined`.
+    Объект нужно обернуть в скобки: `(n) => ({ value: n })`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/map/not-filter" options={['2', '4', '0', '3']} answer={1}>
+  Какой длины будет массив?
+
+  ```js
+  const result = [1, 2, 3, 4].map((n) => (n > 2 ? n : null));
+  ```
+
+  <Fragment slot="explanation">
+    `map` всегда возвращает массив той же длины, что и исходный: `[null, null, 3, 4]`. Чтобы убрать элементы, нужен `filter`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/map/mutation" options={['false', 'true', 'undefined']} answer={1}>
+  Чему будет равно `users[0].active`?
+
+  ```js
+  const users = [{ name: 'Аня', active: false }];
+
+  const activated = users.map((user) => {
+    user.active = true;
+    return user;
+  });
+  ```
+
+  <Fragment slot="explanation">
+    `map` создал новый массив, но положил в него **те же самые объекты** — колбэк изменил исходный объект и вернул его.
+    Чтобы не трогать исходные данные: `users.map((user) => ({ ...user, active: true }))`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/map/async-promises" options={['[2, 4]', '[Promise, Promise]', 'Promise', 'undefined']} answer={1}>
+  Что окажется в `result`?
+
+  ```js
+  const result = [1, 2].map(async (n) => n * 2);
+  ```
+
+  <Fragment slot="explanation">
+    `async`-функция всегда возвращает промис. `map` не ждёт их — он просто собирает возвращённые промисы в массив.
+    Значения достают через `await Promise.all(result)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/map/promise-all-time" options={['Около 1 секунды', 'Около 3 секунд', 'Мгновенно', 'Около 6 секунд']} answer={0}>
+  Через сколько времени выведется результат?
+
+  ```js
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const results = await Promise.all([1, 2, 3].map(async (n) => {
+    await wait(1000);
+    return n * 2;
+  }));
+
+  console.log(results);
+  ```
+
+  <Fragment slot="explanation">
+    `map` запускает все три асинхронных колбэка сразу, и их ожидания идут **параллельно**. `Promise.all` ждёт самый долгий —
+    около секунды. Последовательно (через `for...of` с `await`) это заняло бы около 3 секунд.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Оценка студентов" level="easy">
+  К каждой оценке добавьте бонусные баллы, но так, чтобы результат не превышал максимум. Параметры возьмите из объекта
+  `gradingSystem`. Решите двумя способами: через `thisArg` и через стрелочную функцию.
+
+  ```js
+  const scores = [85, 92, 78, 95];
+
+  const gradingSystem = {
+    bonusPoints: 5,
+    maxScore: 100,
+  };
+
+  // [90, 97, 83, 100]
+  ```
+
+  <Fragment slot="hint">
+    `Math.min(score + бонус, максимум)` не даст значению превысить максимум.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    // Через thisArg — колбэк объявлен через function
+    const finalScores = scores.map(function (score) {
+      return Math.min(score + this.bonusPoints, this.maxScore);
+    }, gradingSystem);
+
+    // Через стрелочную функцию — обращаемся к объекту напрямую
+    const finalScores2 = scores.map((score) =>
+      Math.min(score + gradingSystem.bonusPoints, gradingSystem.maxScore),
+    );
+    ```
+
+    `95 + 5 = 100` — ровно максимум, а `Math.min` подрезал бы и большее значение. Второй вариант понятнее:
+    видно, откуда берутся бонус и максимум, а не нужно помнить, чему равен `this`.
+  </Fragment>
+</Task>
+
+<Task title="Цены для витрины" level="easy">
+  Превратите массив цен в строки с двумя знаками после запятой и знаком рубля.
+
+  ```js
+  const prices = [1500, 99.9, 12.345];
+  // ['1500.00 ₽', '99.90 ₽', '12.35 ₽']
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const labels = prices.map((price) => `${price.toFixed(2)} ₽`);
+    ```
+
+    `toFixed(2)` округляет и всегда оставляет два знака. Для настоящего интернет-магазина удобнее
+    `price.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })` — он ещё и разделит тысячи пробелом.
+  </Fragment>
+</Task>
+
+<Task title="Инициалы" level="easy">
+  Превратите полные имена в инициалы.
+
+  ```js
+  const names = ['Иван Петров', 'Анна Смирнова', 'Олег Иванов'];
+  // ['И. П.', 'А. С.', 'О. И.']
+  ```
+
+  <Fragment slot="hint">
+    Разбейте имя на слова через `split(' ')` и примените `map` ещё раз — к словам.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const initials = names.map((fullName) =>
+      fullName
+        .split(' ')
+        .map((word) => `${word[0]}.`)
+        .join(' '),
+    );
+    ```
+
+    Внутри внешнего `map` — ещё один `map`: он превращает каждое слово в его первую букву с точкой.
+  </Fragment>
+</Task>
+
+<Task title="Карточки пользователей" level="medium">
+  Превратите данные с сервера в объекты для отображения, **не меняя** исходный массив: добавьте поле `fullName`
+  и поле `isAdult`, а `birthYear` уберите — вместо него нужен возраст `age` на 2026 год.
+
+  ```js
+  const users = [
+    { id: 1, firstName: 'Анна', lastName: 'Смирнова', birthYear: 1998 },
+    { id: 2, firstName: 'Иван', lastName: 'Петров', birthYear: 2010 },
+  ];
+
+  // [
+  //   { id: 1, firstName: 'Анна', lastName: 'Смирнова', fullName: 'Анна Смирнова', age: 28, isAdult: true },
+  //   { id: 2, firstName: 'Иван', lastName: 'Петров', fullName: 'Иван Петров', age: 16, isAdult: false },
+  // ]
+  ```
+
+  <Fragment slot="hint">
+    Rest в деструктуризации параметра уберёт `birthYear`, а spread скопирует остальные поля в новый объект.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const CURRENT_YEAR = 2026;
+
+    const cards = users.map(({ birthYear, ...user }) => {
+      const age = CURRENT_YEAR - birthYear;
+
+      return {
+        ...user,
+        fullName: `${user.firstName} ${user.lastName}`,
+        age,
+        isAdult: age >= 18,
+      };
+    });
+    ```
+
+    Деструктуризация в параметре достаёт `birthYear`, а всё остальное собирает в `user` — так поле исчезает из результата.
+    Каждый элемент — новый объект, поэтому `users` остаётся прежним.
+  </Fragment>
+</Task>
+
+<Task title="Таблица умножения" level="medium">
+  С помощью `Array.from` и `map` создайте двумерный массив — таблицу умножения 4 × 4.
+
+  ```js
+  // [
+  //   [1, 2, 3, 4],
+  //   [2, 4, 6, 8],
+  //   [3, 6, 9, 12],
+  //   [4, 8, 12, 16],
+  // ]
+  ```
+
+  <Fragment slot="hint">
+    `Array.from({ length: 4 }, (_, i) => i + 1)` даёт `[1, 2, 3, 4]`. Каждое число строки можно превратить в целую строку таблицы.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const numbers = Array.from({ length: 4 }, (_, i) => i + 1);
+
+    const table = numbers.map((row) => numbers.map((col) => row * col));
+    ```
+
+    Внешний `map` проходит по строкам, внутренний — по столбцам. Для каждой строки `row` получается массив произведений.
+  </Fragment>
+</Task>
+
+<Task title="Загрузить всех пользователей" level="hard">
+  Есть функция `fetchUser(id)`, которая возвращает промис с пользователем через 500 мс. Напишите async-функцию
+  `fetchUsers(ids)`, которая загружает всех пользователей **параллельно** и возвращает массив их имён.
+
+  ```js
+  const db = { 1: 'Аня', 2: 'Иван', 3: 'Олег' };
+
+  const fetchUser = (id) =>
+    new Promise((resolve) => {
+      setTimeout(() => resolve({ id, name: db[id] }), 500);
+    });
+
+  await fetchUsers([3, 1, 2]); // ['Олег', 'Аня', 'Иван'] — примерно через 0.5 с
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    async function fetchUsers(ids) {
+      const users = await Promise.all(ids.map(fetchUser));
+      return users.map((user) => user.name);
+    }
+    ```
+
+    `ids.map(fetchUser)` сразу запускает все запросы и даёт массив промисов. `Promise.all` ждёт их и возвращает пользователей
+    в том же порядке, что и `ids`. Второй `map` уже синхронный — достаёт имена.
+    Через `for...of` с `await` запросы шли бы по очереди и заняли бы около 1.5 секунды вместо 0.5.
+  </Fragment>
+</Task>

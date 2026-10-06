@@ -1,0 +1,780 @@
+---
+title: Функциональные выражения
+description: Function expression против объявления функции — поднятие, именованные выражения, функции как значения, создание по условию и IIFE
+section: js
+order: 18
+level: middle
+tags: [functions, function-expression, hoisting]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+Функцию в JavaScript можно создать как **инструкцию** — объявить, — или как **значение** внутри выражения.
+Второй способ называется **функциональным выражением** (function expression).
+
+```js
+// Объявление функции (function declaration)
+function sumDec(a, b) {
+  return a + b;
+}
+
+// Функциональное выражение (function expression)
+const sumExp = function (a, b) {
+  return a + b;
+};
+
+sumDec(2, 3); // 5
+sumExp(2, 3); // 5
+```
+
+Результат одинаковый, но работают они по-разному. Основы функций — в уроке [Функции](/learn/js/functions).
+
+## Функция — это значение
+
+В функциональном выражении функция создаётся так же, как число или строка, и сохраняется в переменную.
+Переменная `sumExp` хранит функцию — её можно передавать, копировать, класть в объекты и массивы.
+
+```js
+const hello = function () {
+  console.log('Привет!');
+};
+
+hello(); // 'Привет!'
+
+const greet = hello; // скопировали ссылку на ту же функцию
+greet(); // 'Привет!'
+
+typeof hello; // 'function'
+```
+
+Обратите внимание на `;` после закрывающей скобки: это обычное присваивание `const hello = …;`,
+и точка с запятой стоит в конце выражения — как после `const x = 5;`.
+
+## Function declaration vs function expression
+
+### Как отличить
+
+Правило простое: если строка **начинается со слова `function`** — это объявление. Во всех остальных случаях,
+когда функция стоит **внутри выражения**, — это функциональное выражение.
+
+```js
+function a() {} // объявление — инструкция начинается с function
+
+const b = function () {}; // выражение — справа от =
+const c = function named() {}; // выражение — с именем, но всё равно справа от =
+
+setTimeout(function () {}, 1000); // выражение — аргумент функции
+const ops = { add: function () {} }; // выражение — значение свойства
+(function () {})(); // выражение — скобки делают из функции выражение
+```
+
+### Сводная таблица
+
+|  | Function declaration | Function expression |
+|---|---|---|
+| Синтаксис | `function name() {}` — отдельная инструкция | `const name = function () {};` — значение в выражении |
+| Имя | обязательно | необязательно (`function () {}` — анонимная) |
+| Вызов до строки объявления | можно — поднимается целиком | нельзя — функция создаётся, когда до неё дошло выполнение |
+| Где можно написать | только как отдельную инструкцию | везде, где допустимо значение: в аргументе, в `return`, в тернарном операторе, в объекте |
+| Видимость собственного имени | во всей окружающей области | только внутри самой функции |
+| Повторное объявление с тем же именем | в обычном скрипте и внутри функций — молча перезаписывает предыдущее | с `const` / `let` — всегда `SyntaxError` |
+| Переприсвоить имя | можно: `sayHi = 5` сработает | с `const` — `TypeError` |
+| `;` после `}` | не нужна | нужна — это конец присваивания |
+
+Разберём отличия по порядку.
+
+### 1. Поднятие
+
+**Объявление функции** поднимается целиком — его можно вызвать до строки, где оно написано:
+
+```js
+sayHi(); // 'Привет!' — работает
+
+function sayHi() {
+  console.log('Привет!');
+}
+```
+
+**Функциональное выражение** создаётся только тогда, когда выполнение дойдёт до его строки:
+
+```js
+sayHello(); // ReferenceError: Cannot access 'sayHello' before initialization
+
+const sayHello = function () {
+  console.log('Привет!');
+};
+```
+
+Точнее, поднимается **переменная**, но не функция: до строки присваивания функции в ней ещё нет.
+Что именно произойдёт, зависит от того, как объявлена переменная:
+
+| Как объявлено | Вызов до объявления |
+|---|---|
+| `function f() {}` | работает |
+| `const f = function () {}` / `let f = …` | `ReferenceError` — переменная в «мёртвой зоне» |
+| `var f = function () {}` | `TypeError: f is not a function` — переменная есть, но равна `undefined` |
+
+Подробнее о поднятии и мёртвой зоне — в уроке [Переменные и типы](/learn/js/variables).
+
+<Callout type="tip">
+  То, что выражение нельзя вызвать раньше объявления, — скорее плюс: код читается сверху вниз, и функция всегда
+  определена до использования. Многие команды поэтому пишут функции через `const`.
+</Callout>
+
+### 2. Где можно написать
+
+Объявление — это **инструкция**, как `if` или `for`. Его нельзя поставить туда, где ожидается значение.
+Выражение — это **значение**, и оно подходит в любое такое место:
+
+```js
+// Аргумент функции
+[1, 2, 3].map(function (n) {
+  return n * 2;
+});
+
+// Результат функции
+function createLogger() {
+  return function (message) {
+    console.log(message);
+  };
+}
+
+// Выбор по условию
+const format = isMobile ? function (t) { return t.slice(0, 20); } : function (t) { return t; };
+
+// Значение свойства
+const user = {
+  greet: function () {
+    return 'Привет';
+  },
+};
+```
+
+Эти примеры невозможно переписать объявлениями без промежуточной переменной — в этом главная сила выражений.
+
+### 3. Имя
+
+У объявления имя **обязательно**, и оно становится переменной в окружающей области — функцию можно вызвать по нему
+из любого места этой области.
+
+У выражения имя **необязательно**. Функцию вызывают по имени переменной, в которую её сохранили.
+А если имя всё же указать (`function fact() {}`), оно будет видно **только внутри** самой функции —
+об этом ниже, в разделе про именованные выражения.
+
+```js
+function declared() {}
+const expressed = function inner() {};
+
+typeof declared; // 'function'
+typeof expressed; // 'function'
+typeof inner; // 'undefined' — имя выражения снаружи не видно
+```
+
+### 4. Повторное объявление и переприсваивание
+
+Два объявления с одинаковым именем не дают ошибки — **последнее молча побеждает**, причём ещё до запуска кода:
+
+```js
+function getPrice() {
+  return 100;
+}
+
+function getPrice() {
+  return 200;
+}
+
+getPrice(); // 200 — первое объявление потерялось без предупреждения
+```
+
+Так ведут себя объявления в обычном скрипте и внутри функций. На верхнем уровне **модуля** и внутри блоков
+в строгом режиме повторное объявление уже даёт `SyntaxError` — но полагаться на это не стоит:
+в разных местах кода правило разное.
+
+С выражением через `const` такая ошибка невозможна:
+
+```js
+const getPrice = function () {
+  return 100;
+};
+
+const getPrice = function () {
+  return 200;
+}; // SyntaxError: Identifier 'getPrice' has already been declared
+```
+
+То же с переприсваиванием: имя объявленной функции — обычная переменная, её можно случайно затереть,
+а функцию в `const` — нет:
+
+```js
+function sayHi() {}
+sayHi = 5; // ошибки нет — функция потеряна
+sayHi(); // TypeError: sayHi is not a function
+
+const sayHello = function () {};
+sayHello = 5; // TypeError: Assignment to constant variable.
+```
+
+### 5. Глобальная область
+
+В обычном (не модульном) скрипте объявление функции на верхнем уровне становится свойством `window`,
+как и `var`. Выражение в `const` или `let` — нет:
+
+```js
+function globalDeclared() {}
+const globalExpressed = function () {};
+
+window.globalDeclared; // функция
+window.globalExpressed; // undefined
+```
+
+Так объявление может случайно перезаписать встроенное свойство браузера или функцию из другого скрипта с тем же именем.
+В модулях (`type="module"`) этой разницы нет — там ничего не попадает в `window`.
+
+### Что выбрать
+
+Оба способа правильные, и в реальных проектах встречаются оба. Чаще всего договариваются так:
+
+- **Объявление** — для основных функций файла. Их можно расположить в любом порядке, например сначала
+  главную логику, а вспомогательные функции — ниже.
+- **Выражение** (обычно стрелочное, в `const`) — для колбэков, функций по условию, функций в объектах
+  и везде, где функцию нужно передать как значение. Плюс — защита от случайного повторного объявления и переприсваивания.
+
+Главное — придерживаться одного стиля во всём проекте.
+
+## Использование как колбэка
+
+Функциональные выражения постоянно передают в другие функции — прямо в месте вызова:
+
+```js
+// Готовую функцию — по имени
+setTimeout(hello, 2000);
+
+// Или выражение прямо в аргументе — анонимная функция
+setTimeout(function () {
+  console.log('Привет через 3 секунды!');
+}, 3000);
+
+// То же самое — стрелочной функцией
+setTimeout(() => console.log('Привет через 3 секунды!'), 3000);
+```
+
+Стрелочная функция — это короткая форма функционального выражения:
+
+```js
+const numbers = [1, 2, 3, 4, 5, 6];
+
+const square = (n) => n ** 2; // n во второй степени — то же, что Math.pow(n, 2)
+const squares = numbers.map(square); // [1, 4, 9, 16, 25, 36]
+```
+
+Подробнее о колбэках — в уроке [Колбэки](/learn/js/callbacks).
+
+## Именованное функциональное выражение
+
+У функционального выражения может быть **собственное имя** — оно пишется после `function`:
+
+```js
+const factorial = function fact(n) {
+  return n <= 1 ? 1 : n * fact(n - 1);
+};
+
+factorial(5); // 120
+fact(5); // ReferenceError: fact is not defined — снаружи имени нет
+```
+
+Имя `fact` видно **только внутри** самой функции. Зачем оно нужно:
+
+- **Рекурсия.** Функция может вызвать саму себя по внутреннему имени — и это сработает, даже если внешнюю переменную
+  потом переприсвоят.
+- **Отладка.** Имя показывается в стеке вызовов при ошибке, а «anonymous» на его месте ничего не говорит.
+
+```js
+let countdown = function tick(n) {
+  if (n < 0) return;
+  console.log(n);
+  tick(n - 1); // вызов по внутреннему имени
+};
+
+const start = countdown;
+countdown = null; // внешнюю переменную перезаписали
+
+start(2); // 2, 1, 0 — работает, потому что tick не зависит от countdown
+```
+
+## Функция по условию
+
+Объявление функции — это инструкция, а выражение — значение. Поэтому выражение можно присвоить по условию,
+в одном месте выбрав, какая функция будет работать:
+
+```js
+const language = 'en';
+
+const greet =
+  language === 'ru'
+    ? function (name) {
+        return `Привет, ${name}!`;
+      }
+    : function (name) {
+        return `Hello, ${name}!`;
+      };
+
+greet('Anna'); // 'Hello, Anna!'
+```
+
+<Callout type="warning">
+  Не объявляйте функции через `function` внутри `if` и других блоков: в разных режимах (строгом и нестрогом)
+  такие объявления ведут себя по-разному. Если функция нужна по условию — присвойте выражение переменной.
+</Callout>
+
+## Функции в объектах и массивах
+
+Раз функция — значение, её можно хранить где угодно:
+
+```js
+// В объекте — по ключу
+const operations = {
+  add: function (a, b) {
+    return a + b;
+  },
+  subtract: (a, b) => a - b,
+};
+
+operations.add(5, 3); // 8
+operations['subtract'](5, 3); // 2 — ключ можно взять из переменной
+
+// В массиве — список действий
+const steps = [
+  (n) => n + 1,
+  (n) => n * 10,
+];
+
+steps.map((step) => step(4)); // [5, 40]
+```
+
+Функция в свойстве объекта называется **методом**. Для методов есть короткая запись — `add(a, b) { … }`, —
+она разобрана в уроке [Объекты](/learn/js/objects).
+
+## Функция, которая возвращает функцию
+
+Функциональное выражение можно вернуть из другой функции — так создают «фабрики» с настройками:
+
+```js
+function createGreeter(greeting) {
+  return function (name) {
+    return `${greeting}, ${name}!`;
+  };
+}
+
+const sayHi = createGreeter('Привет');
+const sayBye = createGreeter('Пока');
+
+sayHi('Аня'); // 'Привет, Аня!'
+sayBye('Аня'); // 'Пока, Аня!'
+```
+
+Возвращённая функция помнит `greeting` — это [замыкание](/learn/js/closures).
+
+## IIFE — вызвать сразу
+
+Функциональное выражение можно вызвать сразу же после создания. Такой приём называется
+**IIFE** (Immediately Invoked Function Expression):
+
+```js
+(function () {
+  const secret = 'видна только внутри';
+  console.log('Выполнилось сразу');
+})();
+
+// То же со стрелочной функцией
+(() => {
+  console.log('И это тоже');
+})();
+```
+
+Скобки вокруг функции превращают её в выражение — без них движок прочитал бы `function` как объявление.
+Раньше IIFE использовали, чтобы спрятать переменные от глобальной области; сейчас для этого есть модули и блоки.
+
+<Callout type="danger">
+  Если вы пишете без точек с запятой, IIFE после другой строки может сломать код:
+
+  ```js
+  const message = 'Привет'
+  (function () {
+    console.log('IIFE');
+  })()
+  ```
+
+  JavaScript не ставит `;` автоматически перед `(`, и код читается как `'Привет'(function () { … })()` — попытка вызвать строку:
+  `TypeError: "Привет" is not a function`. Поэтому перед IIFE в таком стиле ставят `;` в начале строки: `;(function () { … })()`.
+</Callout>
+
+## Объявление, выражение или стрелка
+
+|  | Объявление | Функциональное выражение | Стрелочная функция |
+|---|---|---|---|
+| Можно вызвать до объявления | да | нет | нет |
+| Можно создать по условию / передать сразу | нет | да | да |
+| Своё имя для рекурсии и отладки | да | по желанию (`function name() {}`) | нет, только имя переменной |
+| Свой `this` и `arguments` | есть | есть | нет — берёт снаружи |
+| Можно вызвать с `new` | да | да | нет |
+
+Практическое правило:
+
+- **объявления** — для основных функций модуля, которые удобно читать «сверху как оглавление»;
+- **стрелочные функции** — для колбэков и коротких функций;
+- **функциональные выражения через `function`** — когда нужен собственный `this` (например, колбэк с `thisArg`
+  или обработчик, которому нужен `this` элемента) или имя для рекурсии.
+
+## Проверь себя
+
+<Quiz client:visible id="js/function-expression/const-before" options={["'Привет!'", 'undefined', 'ReferenceError', 'TypeError']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  hello();
+
+  const hello = function () {
+    console.log('Привет!');
+  };
+  ```
+
+  <Fragment slot="explanation">
+    Переменная `const hello` до своей строки находится во временной мёртвой зоне, а функция в неё ещё не записана.
+    `ReferenceError: Cannot access 'hello' before initialization`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/function-expression/var-before" options={["'Привет!'", 'undefined', 'ReferenceError', 'TypeError']} answer={3}>
+  А если объявить через `var`?
+
+  ```js
+  hello();
+
+  var hello = function () {
+    console.log('Привет!');
+  };
+  ```
+
+  <Fragment slot="explanation">
+    `var hello` поднимается со значением `undefined`, а функция присваивается позже. Вызов `undefined()` —
+    `TypeError: hello is not a function`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/function-expression/declaration-before" options={["'Привет!'", 'undefined', 'ReferenceError', 'TypeError']} answer={0}>
+  А если это объявление функции?
+
+  ```js
+  hello();
+
+  function hello() {
+    console.log('Привет!');
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Объявление функции поднимается целиком — вместе с телом. Поэтому вызов до строки объявления работает.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/function-expression/which-kind"
+  options={['Объявление, объявление, выражение', 'Объявление, выражение, выражение', 'Выражение, выражение, выражение', 'Объявление, выражение, объявление']}
+  answer={1}
+>
+  Где объявление, а где выражение?
+
+  ```js
+  function a() {}
+  const b = function c() {};
+  [1, 2].forEach(function d() {});
+  ```
+
+  <Fragment slot="explanation">
+    Только первая строка начинается со слова `function` — это объявление. `b` — выражение справа от `=`, даже с именем `c`.
+    Функция `d` передана аргументом в `forEach` — тоже выражение, несмотря на имя.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/function-expression/duplicate-declaration" options={['1', '2', 'SyntaxError', 'undefined']} answer={1}>
+  Что выведет код в обычном (не модульном) скрипте?
+
+  ```js
+  function getValue() {
+    return 1;
+  }
+
+  console.log(getValue());
+
+  function getValue() {
+    return 2;
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Оба объявления поднимаются ещё до выполнения кода, и второе перезаписывает первое. Поэтому даже вызов, который стоит
+    **между** ними, получит `2`. В обычном скрипте ошибки нет — и это опасно (в модуле был бы `SyntaxError`).
+    С `const getValue = function …` повторное объявление дало бы `SyntaxError` в любом месте.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/function-expression/reassign"
+  options={['Обе строки дадут ошибку', 'Ошибка будет только во второй', 'Ошибка будет только в первой', 'Ошибок не будет']}
+  answer={1}
+>
+  Какая строка с присваиванием вызовет ошибку?
+
+  ```js
+  function first() {}
+  const second = function () {};
+
+  first = 'строка';
+  second = 'строка';
+  ```
+
+  <Fragment slot="explanation">
+    Имя объявленной функции — обычная изменяемая переменная, поэтому `first = 'строка'` молча затирает функцию.
+    `second` объявлена через `const`, и её переприсваивание — `TypeError: Assignment to constant variable.`
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/function-expression/nfe-scope" options={["'function'", "'undefined'", 'ReferenceError']} answer={1}>
+  Что вернёт `typeof inner`?
+
+  ```js
+  const outer = function inner() {
+    return 1;
+  };
+
+  typeof inner;
+  ```
+
+  <Fragment slot="explanation">
+    Имя именованного функционального выражения видно **только внутри** функции. Снаружи переменной `inner` нет,
+    а `typeof` для необъявленного имени возвращает `'undefined'` без ошибки.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/function-expression/typeof" options={["'object'", "'function'", "'undefined'", "'expression'"]} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  const square = function (n) {
+    return n * n;
+  };
+
+  typeof square;
+  ```
+
+  <Fragment slot="explanation">
+    Переменная хранит функцию, и `typeof` для функций возвращает `'function'` — неважно, как она была создана.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/function-expression/array-of-functions" options={['[5, 40]', '[4, 4]', '[5, 50]', "['n + 1', 'n * 10']"]} answer={0}>
+  Что вернёт выражение?
+
+  ```js
+  const steps = [(n) => n + 1, (n) => n * 10];
+  steps.map((step) => step(4));
+  ```
+
+  <Fragment slot="explanation">
+    В массиве лежат две функции. `map` вызывает каждую с аргументом `4`: `4 + 1 = 5` и `4 * 10 = 40`.
+    Функции не применяются друг за другом — каждая получает исходное `4`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/function-expression/iife-asi"
+  options={["Выведет 'IIFE'", "Выведет 'Привет', потом 'IIFE'", 'TypeError: "Привет" is not a function', 'SyntaxError']}
+  answer={2}
+>
+  Что произойдёт? Точек с запятой в коде нет.
+
+  ```js
+  const message = 'Привет'
+  (function () {
+    console.log('IIFE')
+  })()
+  ```
+
+  <Fragment slot="explanation">
+    Перед `(` JavaScript не вставляет точку с запятой автоматически, поэтому две строки склеиваются в одну:
+    `'Привет'(function () { … })()`. Это попытка вызвать строку как функцию. Решение — `;` перед IIFE: `;(function () { … })()`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Три формы" level="easy">
+  Перепишите функцию двумя способами: как функциональное выражение и как стрелочную функцию с неявным `return`.
+
+  ```js
+  function getDiscountPrice(price, percent) {
+    return price - (price * percent) / 100;
+  }
+
+  getDiscountPrice(2000, 15); // 1700
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const getDiscountPrice = function (price, percent) {
+      return price - (price * percent) / 100;
+    };
+
+    const getDiscountPriceArrow = (price, percent) => price - (price * percent) / 100;
+    ```
+
+    После переделки функцию больше нельзя вызвать выше строки, где она объявлена, — всё остальное работает так же.
+  </Fragment>
+</Task>
+
+<Task title="Калькулятор на объекте" level="easy">
+  Создайте объект `operations` с функциями `+`, `-`, `*`, `/` и функцию `calculate(a, operator, b)`,
+  которая выбирает функцию по ключу. Для неизвестного оператора — ошибка.
+
+  ```js
+  calculate(10, '+', 5); // 15
+  calculate(10, '*', 5); // 50
+  calculate(10, '%', 5); // Error: Неизвестный оператор: %
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const operations = {
+      '+': (a, b) => a + b,
+      '-': (a, b) => a - b,
+      '*': (a, b) => a * b,
+      '/': (a, b) => a / b,
+    };
+
+    function calculate(a, operator, b) {
+      if (!Object.hasOwn(operations, operator)) {
+        throw new Error(`Неизвестный оператор: ${operator}`);
+      }
+
+      return operations[operator](a, b);
+    }
+    ```
+
+    Функции хранятся в объекте как значения, поэтому длинный `switch` не нужен: добавить оператор — значит добавить ключ.
+    Ключи `'+'` и `'-'` пишутся в кавычках, потому что это не корректные имена переменных.
+
+    Почему `Object.hasOwn`, а не `typeof operations[operator] === 'function'`: у любого объекта есть **унаследованные** методы.
+    `operations['toString']` — тоже функция, и такая проверка пропустила бы `calculate(10, 'toString', 5)`.
+    `Object.hasOwn` проверяет только собственные ключи объекта.
+  </Fragment>
+</Task>
+
+<Task title="Форматирование по условию" level="easy">
+  В зависимости от переменной `currency` создайте функцию `formatPrice`, которая форматирует цену в рублях (`'1500 ₽'`)
+  или долларах (`'$1500'`). Выбор делается **один раз**, а не при каждом вызове.
+
+  ```js
+  const currency = 'USD';
+  formatPrice(1500); // '$1500'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const formatPrice =
+      currency === 'USD'
+        ? function (amount) {
+            return `$${amount}`;
+          }
+        : function (amount) {
+            return `${amount} ₽`;
+          };
+    ```
+
+    Условие проверяется один раз — при создании функции. Дальше `formatPrice` просто форматирует, без лишних проверок.
+    `$${amount}` — первый `$` это обычный символ, а `${…}` — подстановка.
+  </Fragment>
+</Task>
+
+<Task title="Рекурсия через внутреннее имя" level="medium">
+  Напишите именованное функциональное выражение `sumTo`, которое считает сумму чисел от 1 до `n` рекурсивно —
+  вызывая себя по внутреннему имени.
+
+  ```js
+  sumTo(4); // 10 — 4 + 3 + 2 + 1
+  sumTo(1); // 1
+  ```
+
+  <Fragment slot="hint">
+    Сумма до `n` — это `n` плюс сумма до `n - 1`. Остановитесь на `n === 1`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const sumTo = function sum(n) {
+      if (n <= 1) return n;
+      return n + sum(n - 1);
+    };
+    ```
+
+    Внутри функция вызывает себя как `sum`, а снаружи доступна как `sumTo`. Условие `n <= 1` — точка остановки рекурсии,
+    без неё функция вызывала бы себя бесконечно. Для больших `n` лучше обычный цикл или формула `n * (n + 1) / 2`.
+  </Fragment>
+</Task>
+
+<Task title="Фабрика проверок" level="medium">
+  Напишите функцию `between(min, max)`, которая возвращает **функцию-проверку**: она принимает число и возвращает,
+  попадает ли оно в диапазон включительно. Используйте её с `filter`.
+
+  ```js
+  const isTeen = between(13, 19);
+
+  isTeen(15); // true
+  isTeen(20); // false
+  [10, 13, 17, 19, 25].filter(isTeen); // [13, 17, 19]
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function between(min, max) {
+      return function (value) {
+        return value >= min && value <= max;
+      };
+    }
+    ```
+
+    `between` возвращает функциональное выражение, которое помнит `min` и `max`. Получившуюся функцию можно сразу
+    передать в `filter` как колбэк — она принимает элемент и возвращает `true` или `false`.
+  </Fragment>
+</Task>
+
+<Task title="Проверка формы набором правил" level="hard">
+  Правила проверки пароля хранятся в массиве объектов: у каждого есть функция `test` и текст ошибки `message`.
+  Напишите функцию `validate(value, rules)`, которая возвращает массив текстов ошибок для всех **не пройденных** правил.
+
+  ```js
+  const passwordRules = [
+    { test: (v) => v.length >= 8, message: 'Минимум 8 символов' },
+    { test: (v) => /\d/.test(v), message: 'Нужна хотя бы одна цифра' },
+    { test: (v) => /[A-ZА-ЯЁ]/.test(v), message: 'Нужна заглавная буква' },
+  ];
+
+  validate('qwerty', passwordRules);
+  // ['Минимум 8 символов', 'Нужна хотя бы одна цифра', 'Нужна заглавная буква']
+
+  validate('Qwerty123', passwordRules); // []
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const validate = (value, rules) => rules.filter((rule) => !rule.test(value)).map((rule) => rule.message);
+    ```
+
+    Функции `test` хранятся в объектах как значения, а `validate` просто вызывает каждую. Новое правило добавляется
+    в массив — саму `validate` менять не нужно. `/\d/` — регулярное выражение «есть цифра», а `.test(v)` проверяет строку.
+  </Fragment>
+</Task>

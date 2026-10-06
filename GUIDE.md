@@ -60,7 +60,7 @@ app/
 │  │  ├─ ui/                    # компоненты shadcn/ui (button.tsx, card.tsx, …)
 │  │  ├─ blocks/                # свои блоки сайта: Header, ThemeToggle, LinkCard, Callout
 │  │  └─ demos/{react,vue}/     # маленькие демки для уроков
-│  ├─ content/lessons/<section>/<slug>.mdx   # уроки
+│  ├─ content/lessons/<section>/<slug>.mdx   # уроки (разделы — в lib/sections.ts)
 │  ├─ projects/<slug>/index.mdx              # описания проектов
 │  ├─ layouts/                  # BaseLayout (шапка, тема), DocsLayout (уроки)
 │  ├─ lib/                      # sections.ts (разделы уроков), projects.ts (подписи, appUrl)
@@ -185,7 +185,7 @@ Tailwind-классами на токенах (`bg-primary text-primary-foregrou
 ---
 title: Промисы
 description: Как работают промисы и async/await
-section: js            # js | vue | react | frontend
+section: js            # js | css | vue | react | frontend | architecture | patterns
 order: 3               # порядок в сайдбаре
 level: middle          # beginner | middle | advanced (по умолчанию beginner)
 tags: [async]
@@ -296,9 +296,10 @@ import Task from '@/components/blocks/Task.astro';
 
 ### Новый раздел уроков
 
-1. Добавить раздел в `sections` в [`src/lib/sections.ts`](src/lib/sections.ts).
-2. Добавить его id в `z.enum` поля `section` в `src/content.config.ts`.
-3. При необходимости — пункт в `nav` в `Header.astro`.
+1. Добавить раздел в `sections` в [`src/lib/sections.ts`](src/lib/sections.ts) — `id`, название и описание.
+   Схема уроков берёт список разделов оттуда же, поэтому `section: <id>` во frontmatter сразу станет допустимым.
+2. При необходимости — пункт в `nav` в `Header.astro`.
+3. Создать папку `src/content/lessons/<id>/` для уроков. Пока уроков нет, страница раздела покажет «Уроки скоро появятся».
 
 ## Проекты
 

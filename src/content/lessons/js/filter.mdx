@@ -1,0 +1,551 @@
+---
+title: Метод filter
+description: Отбор элементов массива через filter — условия, индекс, истинные и ложные значения, поиск, удаление без изменения массива
+section: js
+order: 16
+level: beginner
+tags: [arrays, filter, callbacks]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+`filter` создаёт **новый массив** только из тех элементов, для которых колбэк вернул истинное значение.
+Исходный массив не меняется.
+
+```js
+const numbers = [5, 12, 8, 130, 44];
+const bigNumbers = numbers.filter((num) => num > 10);
+
+console.log(bigNumbers); // [12, 130, 44]
+console.log(numbers); // [5, 12, 8, 130, 44] — без изменений
+```
+
+Если [`map`](/learn/js/map) **преобразует** каждый элемент, то `filter` **отбирает**: результат может быть короче исходного
+массива, но элементы в нём — те же самые, без изменений.
+
+## Синтаксис
+
+```js
+const result = array.filter((element, index, array) => {
+  return условие; // true — оставить элемент, false — пропустить
+});
+```
+
+Колбэк получает те же аргументы, что в `forEach` и `map`: элемент, индекс и весь массив.
+Порядок элементов в результате сохраняется.
+
+## Примеры
+
+### Строки
+
+```js
+const words = ['кот', 'собака', 'мышь', 'слон'];
+const longWords = words.filter((word) => word.length > 3);
+
+console.log(longWords); // ['собака', 'мышь', 'слон']
+```
+
+### Объекты
+
+```js
+const people = [
+  { name: 'Алексей', age: 35 },
+  { name: 'Мария', age: 20 },
+  { name: 'Иван', age: 18 },
+  { name: 'Анна', age: 25 },
+];
+
+const adults = people.filter((person) => person.age >= 18);
+
+adults.forEach((person) => console.log(person.name)); // Алексей, Мария, Иван, Анна
+```
+
+Колбэк можно записать и обычной функцией — результат тот же:
+
+```js
+const adults = people.filter(function (person) {
+  return person.age >= 18;
+});
+```
+
+<Callout type="warning">
+  Внимательно выбирайте `>` или `>=`. Условие `person.age > 18` **не включает** Ивана, которому ровно 18,
+  — а совершеннолетним он уже считается. Такие ошибки на границе диапазона — одни из самых частых.
+</Callout>
+
+### Несколько условий
+
+Условия объединяют через `&&` (все должны выполняться) и `||` (достаточно одного):
+
+```js
+const products = [
+  { name: 'Ноутбук', price: 85000, category: 'техника', inStock: true },
+  { name: 'Мышь', price: 1500, category: 'техника', inStock: false },
+  { name: 'Кружка', price: 600, category: 'посуда', inStock: true },
+  { name: 'Наушники', price: 4500, category: 'техника', inStock: true },
+];
+
+// В наличии И дешевле 10 000
+products.filter((p) => p.inStock && p.price < 10000);
+// [Кружка, Наушники]
+
+// Посуда ИЛИ дороже 50 000
+products.filter((p) => p.category === 'посуда' || p.price > 50000);
+// [Ноутбук, Кружка]
+```
+
+### Поиск по тексту
+
+```js
+function searchProducts(products, query) {
+  const normalized = query.trim().toLowerCase();
+  return products.filter((p) => p.name.toLowerCase().includes(normalized));
+}
+
+searchProducts(products, 'НАУ'); // [Наушники]
+searchProducts(products, 'ш'); // [Мышь, Наушники]
+```
+
+Приводим к нижнему регистру и строку поиска, и названия — так поиск не зависит от того, как набрали текст.
+
+## Использование индекса
+
+Второй аргумент колбэка — индекс. С ним можно отбирать элементы по **позиции**, а не по значению:
+
+```js
+const myNumbers = [10, 20, 30, 40, 50];
+
+const evenIndex = myNumbers.filter((element, index) => index % 2 === 0);
+console.log(evenIndex); // [10, 30, 50] — элементы на индексах 0, 2, 4
+
+const oddIndex = myNumbers.filter((element, index) => index % 2 !== 0);
+console.log(oddIndex); // [20, 40] — элементы на индексах 1, 3
+```
+
+Индекс помогает и убрать повторы: элемент встречается впервые, если `indexOf` находит его на текущей позиции.
+
+```js
+const tags = ['js', 'css', 'js', 'html', 'css'];
+tags.filter((tag, index) => tags.indexOf(tag) === index); // ['js', 'css', 'html']
+```
+
+## Истинные и ложные значения
+
+`filter` не требует, чтобы колбэк возвращал именно `true` или `false`: элемент остаётся, если результат **истинный**
+(truthy), и отбрасывается, если **ложный** (falsy) — `false`, `0`, `''`, `null`, `undefined`, `NaN`.
+
+Из-за этого легко ошибиться:
+
+```js
+const myNumbers = [10, 20, 30, 40, 50];
+
+myNumbers.filter((element, index) => index % 2); // [20, 40], а не [10, 30, 50]!
+```
+
+`index % 2` для чётных индексов равно `0` — ложно, для нечётных — `1` — истинно. Поэтому остаются элементы
+на **нечётных** индексах. Пишите условие явно: `index % 2 === 0`.
+
+### filter(Boolean)
+
+Передать в `filter` функцию `Boolean` — короткий способ убрать все ложные значения:
+
+```js
+const values = ['Аня', '', null, 'Иван', undefined, 'Олег'];
+values.filter(Boolean); // ['Аня', 'Иван', 'Олег']
+```
+
+<Callout type="danger">
+  `filter(Boolean)` удаляет **все** ложные значения — в том числе `0` и `false`. Для массива чисел это почти всегда ошибка:
+  `[0, 5, null, 10].filter(Boolean)` даст `[5, 10]`, потеряв ноль. Если нужно убрать только пустые значения,
+  проверяйте их явно: `.filter((n) => n !== null && n !== undefined)`.
+</Callout>
+
+## Удаление без изменения массива
+
+`filter` — основной способ «удалить» элементы, не трогая исходный массив. Достаточно оставить всё, **кроме** ненужного:
+
+```js
+const todos = [
+  { id: 1, title: 'Купить хлеб', done: true },
+  { id: 2, title: 'Позвонить маме', done: false },
+  { id: 3, title: 'Сделать зарядку', done: true },
+];
+
+const withoutSecond = todos.filter((todo) => todo.id !== 2); // удалили задачу с id 2
+const active = todos.filter((todo) => !todo.done); // убрали выполненные
+
+console.log(todos.length); // 3 — исходный массив цел
+```
+
+В отличие от `splice`, такой код не сдвигает индексы во время перебора и не ломает данные, которыми пользуется другой код.
+Именно так удаляют элементы, например, из состояния в React.
+
+## filter возвращает те же объекты
+
+`filter` создаёт новый **массив**, но объекты в нём — **те же самые**, что в исходном. Если изменить такой объект,
+изменение будет видно и через исходный массив:
+
+```js
+const adults = people.filter((person) => person.age >= 18);
+adults[0].age = 99;
+
+console.log(people[0].age); // 99 — это один и тот же объект
+```
+
+Если нужно изменить отобранные элементы, не трогая исходные, после `filter` используйте `map` с копированием:
+`people.filter(…).map((person) => ({ ...person, checked: true }))`.
+
+## filter, find, some
+
+| Нужно | Метод | Возвращает |
+|---|---|---|
+| Все подходящие элементы | `filter` | массив (может быть пустым) |
+| Первый подходящий элемент | `find` | элемент или `undefined` |
+| Индекс первого подходящего | `findIndex` | индекс или `-1` |
+| Есть ли хотя бы один подходящий | `some` | `true` / `false` |
+| Подходят ли все | `every` | `true` / `false` |
+
+```js
+people.filter((p) => p.name === 'Иван'); // [{ name: 'Иван', age: 18 }] — массив
+people.find((p) => p.name === 'Иван'); // { name: 'Иван', age: 18 } — сам объект
+people.some((p) => p.age < 18); // false
+```
+
+Для поиска одного элемента используйте `find`, а не `filter(…)[0]`: `find` останавливается на первом совпадении,
+а `filter` проходит весь массив.
+
+Если ничего не подошло, `filter` вернёт **пустой массив**, а не `undefined` — проверяйте его длину:
+
+```js
+const found = people.filter((p) => p.age > 100);
+
+if (found.length === 0) {
+  console.log('Никого не нашли');
+}
+```
+
+## Цепочки
+
+`filter` часто стоит первым в цепочке: сначала отобрать нужное, потом преобразовать и посчитать.
+
+```js
+const totalInStock = products
+  .filter((p) => p.inStock) // только в наличии
+  .map((p) => p.price) // только цены
+  .reduce((sum, price) => sum + price, 0); // сумма
+
+console.log(totalInStock); // 90100
+```
+
+## Проверь себя
+
+<Quiz client:visible id="js/filter/index-truthy" options={['[10, 30, 50]', '[20, 40]', '[10, 20, 30, 40, 50]', '[]']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const myNumbers = [10, 20, 30, 40, 50];
+  console.log(myNumbers.filter((element, index) => index % 2));
+  ```
+
+  <Fragment slot="explanation">
+    `filter` оставляет элемент, если результат колбэка **истинный**. Для индексов `0, 2, 4` выражение `index % 2` равно `0` —
+    ложно, для `1, 3` — `1`, истинно. Остаются элементы на нечётных индексах: `[20, 40]`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/filter/boundary" options={['4', '3', '2', '1']} answer={1}>
+  Сколько человек попадёт в результат?
+
+  ```js
+  const people = [
+    { name: 'Алексей', age: 35 },
+    { name: 'Мария', age: 20 },
+    { name: 'Иван', age: 18 },
+    { name: 'Анна', age: 25 },
+  ];
+
+  people.filter((person) => person.age > 18);
+  ```
+
+  <Fragment slot="explanation">
+    `18 > 18` — ложь, поэтому Иван не проходит. Остаются трое. Чтобы включить 18-летних, нужно `>=`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/filter/empty-result" options={['undefined', 'null', '[]', '[1, 2]']} answer={2}>
+  Что вернёт выражение?
+
+  ```js
+  [1, 2].filter((n) => n > 5);
+  ```
+
+  <Fragment slot="explanation">
+    Если ни один элемент не подошёл, `filter` возвращает **пустой массив**. Это удобно: на результате всегда можно вызвать
+    `map`, `forEach` или проверить `length`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/filter/boolean"
+  options={["[1, 2, 'a']", "[0, 1, 2, 'a']", "[0, 1, '', 2, null, 'a']", "[1, '', 2, 'a']"]}
+  answer={0}
+>
+  Что вернёт выражение?
+
+  ```js
+  [0, 1, '', 2, null, 'a'].filter(Boolean);
+  ```
+
+  <Fragment slot="explanation">
+    `Boolean` превращает каждый элемент в `true` или `false`. Ложные значения — `0`, `''` и `null` — отбрасываются.
+    Обратите внимание: ноль тоже пропал.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/filter/no-return" options={['[1, 2, 3]', '[]', '[undefined, undefined, undefined]', '[2, 3]']} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  [1, 2, 3].filter((n) => {
+    n > 1;
+  });
+  ```
+
+  <Fragment slot="explanation">
+    В колбэке с фигурными скобками нет `return` — он всегда возвращает `undefined`, а это ложное значение.
+    Ни один элемент не проходит, результат — пустой массив. (У `map` в таком случае получился бы массив из `undefined`.)
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/filter/string-truthy" options={['[]', "['a', 'b', 'c']", "['yes']", "['a']"]} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  ['a', 'b', 'c'].filter(() => 'нет');
+  ```
+
+  <Fragment slot="explanation">
+    Непустая строка — истинное значение, даже если в ней написано «нет». Колбэк для всех элементов возвращает истину,
+    поэтому остаются все. `filter` смотрит на истинность результата, а не на его смысл.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/filter/same-objects" options={['35', '99', 'undefined']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const people = [{ name: 'Алексей', age: 35 }];
+  const adults = people.filter((p) => p.age >= 18);
+
+  adults[0].age = 99;
+  console.log(people[0].age);
+  ```
+
+  <Fragment slot="explanation">
+    `filter` кладёт в новый массив **те же самые** объекты, а не их копии. `adults[0]` и `people[0]` — один объект,
+    поэтому изменение видно через оба массива.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/filter/vs-find"
+  options={["{ id: 2, name: 'Иван' }", "[{ id: 2, name: 'Иван' }]", "'Иван'", 'true']}
+  answer={1}
+>
+  Что вернёт выражение?
+
+  ```js
+  const users = [
+    { id: 1, name: 'Аня' },
+    { id: 2, name: 'Иван' },
+  ];
+
+  users.filter((user) => user.id === 2);
+  ```
+
+  <Fragment slot="explanation">
+    `filter` всегда возвращает **массив** — даже если подошёл один элемент. Чтобы получить сам объект, используйте `find`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Почините evenIndex" level="easy">
+  Код должен оставить элементы на **чётных** индексах — `[10, 30, 50]`, — но возвращает `[20, 40]`. Исправьте.
+
+  ```js
+  const myNumbers = [10, 20, 30, 40, 50];
+  const evenIndex = myNumbers.filter((element, index) => index % 2);
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const evenIndex = myNumbers.filter((_, index) => index % 2 === 0);
+    ```
+
+    `index % 2` равно `0` для чётных индексов, а `0` — ложное значение, поэтому они отбрасывались. Явное сравнение
+    `=== 0` возвращает `true` именно для чётных. Параметр `element` не используется, поэтому его можно назвать `_`.
+  </Fragment>
+</Task>
+
+<Task title="Поиск по каталогу" level="easy">
+  Напишите функцию `search(items, query)`, которая возвращает элементы, в названии которых есть строка `query`
+  без учёта регистра и пробелов по краям. Пустой запрос возвращает все элементы.
+
+  ```js
+  const books = ['Мастер и Маргарита', 'Война и мир', 'Мёртвые души', 'Идиот'];
+
+  search(books, 'мир'); // ['Война и мир']
+  search(books, '  МАР '); // ['Мастер и Маргарита']
+  search(books, 'и'); // ['Мастер и Маргарита', 'Война и мир', 'Мёртвые души', 'Идиот']
+  search(books, ''); // все 4 книги
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function search(items, query) {
+      const normalized = query.trim().toLowerCase();
+      return items.filter((item) => item.toLowerCase().includes(normalized));
+    }
+    ```
+
+    `includes('')` для любой строки возвращает `true`, поэтому пустой запрос сам собой оставляет все элементы.
+    `trim` убирает случайные пробелы, которые часто попадают в поле поиска.
+  </Fragment>
+</Task>
+
+<Task title="Фильтр по цене" level="easy">
+  Напишите `byPrice(products, min = 0, max = Infinity)`, которая возвращает товары с ценой от `min` до `max` включительно.
+
+  ```js
+  const products = [
+    { name: 'Кружка', price: 600 },
+    { name: 'Мышь', price: 1500 },
+    { name: 'Наушники', price: 4500 },
+    { name: 'Ноутбук', price: 85000 },
+  ];
+
+  byPrice(products, 1000, 5000).map((p) => p.name); // ['Мышь', 'Наушники']
+  byPrice(products, 4500).map((p) => p.name); // ['Наушники', 'Ноутбук']
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const byPrice = (products, min = 0, max = Infinity) =>
+      products.filter((p) => p.price >= min && p.price <= max);
+    ```
+
+    `Infinity` как значение по умолчанию означает «без верхней границы»: любое число меньше бесконечности.
+    `>=` и `<=` включают границы — товар за 4500 попадает в диапазон от 4500.
+  </Fragment>
+</Task>
+
+<Task title="Удалить задачу" level="easy">
+  Напишите функцию `removeTodo(todos, id)`, которая возвращает новый массив без задачи с указанным `id`.
+  Исходный массив меняться не должен.
+
+  ```js
+  const todos = [
+    { id: 1, title: 'Купить хлеб' },
+    { id: 2, title: 'Позвонить маме' },
+  ];
+
+  removeTodo(todos, 1); // [{ id: 2, title: 'Позвонить маме' }]
+  console.log(todos.length); // 2
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const removeTodo = (todos, id) => todos.filter((todo) => todo.id !== id);
+    ```
+
+    Оставляем всё, **кроме** задачи с нужным `id`. Если такого `id` нет, вернётся копия массива со всеми задачами.
+  </Fragment>
+</Task>
+
+<Task title="Очистить данные, не потеряв ноль" level="medium">
+  Из массива показаний датчика нужно убрать пропуски — `null`, `undefined` и `NaN`, — но оставить нули.
+
+  ```js
+  const readings = [12, null, 0, 7, undefined, NaN, 0, 3];
+  // [12, 0, 7, 0, 3]
+  ```
+
+  <Fragment slot="hint">
+    `filter(Boolean)` здесь не подходит. Проверьте, что значение — настоящее число.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const clean = readings.filter((value) => typeof value === 'number' && !Number.isNaN(value));
+    ```
+
+    `typeof value === 'number'` отсекает `null` и `undefined`, но пропускает `NaN` — у него тоже тип `number`.
+    Поэтому нужна ещё проверка `Number.isNaN`. Короче то же самое делает `Number.isFinite(value)` — заодно отбросит и `Infinity`.
+  </Fragment>
+</Task>
+
+<Task title="Общие и уникальные элементы" level="medium">
+  Даны два списка. Найдите элементы, которые есть в обоих, и элементы, которые есть только в первом.
+
+  ```js
+  const mySkills = ['html', 'css', 'js', 'react'];
+  const vacancy = ['js', 'react', 'typescript', 'node'];
+
+  // общие: ['js', 'react']
+  // только у меня: ['html', 'css']
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const common = mySkills.filter((skill) => vacancy.includes(skill));
+    const onlyMine = mySkills.filter((skill) => !vacancy.includes(skill));
+    ```
+
+    Для больших массивов `includes` внутри `filter` медленный — он каждый раз проходит второй массив целиком.
+    Тогда второй массив превращают в `Set`: `const vacancySet = new Set(vacancy)`, и проверяют `vacancySet.has(skill)`.
+  </Fragment>
+</Task>
+
+<Task title="Фильтр по нескольким критериям" level="hard">
+  Напишите функцию `filterUsers(users, criteria)`. Объект `criteria` может содержать поля `minAge`, `city` и `isActive`.
+  Применяться должны только **переданные** критерии.
+
+  ```js
+  const users = [
+    { name: 'Аня', age: 25, city: 'Москва', isActive: true },
+    { name: 'Иван', age: 17, city: 'Казань', isActive: true },
+    { name: 'Олег', age: 32, city: 'Москва', isActive: false },
+    { name: 'Мария', age: 40, city: 'Казань', isActive: true },
+  ];
+
+  filterUsers(users, { city: 'Москва' }).map((u) => u.name); // ['Аня', 'Олег']
+  filterUsers(users, { minAge: 18, isActive: true }).map((u) => u.name); // ['Аня', 'Мария']
+  filterUsers(users, {}).length; // 4
+  ```
+
+  <Fragment slot="hint">
+    Для каждого критерия: если он не передан (`undefined`), пользователь его «проходит» автоматически.
+    Будьте осторожны с `isActive: false` — это тоже переданный критерий.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function filterUsers(users, { minAge, city, isActive } = {}) {
+      return users.filter(
+        (user) =>
+          (minAge === undefined || user.age >= minAge) &&
+          (city === undefined || user.city === city) &&
+          (isActive === undefined || user.isActive === isActive),
+      );
+    }
+    ```
+
+    Каждая скобка читается так: «критерий не задан **или** пользователь ему соответствует». Проверка `=== undefined`,
+    а не `!isActive`, важна: иначе запрос `{ isActive: false }` считался бы «не переданным» и возвращал всех.
+  </Fragment>
+</Task>

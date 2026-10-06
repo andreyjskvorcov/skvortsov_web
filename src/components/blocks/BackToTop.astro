@@ -1,0 +1,36 @@
+---
+import { ArrowUp } from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
+---
+
+<button
+  type="button"
+  class:list={[
+    'back-to-top',
+    buttonVariants({ variant: 'outline', size: 'icon-lg' }),
+    'fixed right-4 bottom-4 z-50 rounded-full shadow-md md:right-8 md:bottom-8',
+    'pointer-events-none translate-y-2 opacity-0 transition-[opacity,translate]',
+    'data-[visible]:pointer-events-auto data-[visible]:translate-y-0 data-[visible]:opacity-100',
+  ]}
+  aria-label="Наверх"
+  title="Наверх"
+>
+  <ArrowUp aria-hidden="true" />
+</button>
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>('.back-to-top');
+
+  if (button) {
+    // Показываем кнопку, когда прокрутили больше одного экрана
+    const update = () => button.toggleAttribute('data-visible', window.scrollY > window.innerHeight);
+
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+
+    button.addEventListener('click', () => {
+      const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
+  }
+</script>

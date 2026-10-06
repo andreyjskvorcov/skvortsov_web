@@ -1,0 +1,630 @@
+---
+title: Области видимости
+description: Глобальная, модульная, функциональная и блочная области, цепочка областей, затенение и типичные ошибки
+section: js
+order: 9
+level: middle
+tags: [scope, hoisting, shadowing]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Область видимости** (scope) — это часть программы, в которой доступна переменная. Она отвечает на вопрос
+«где я могу использовать это имя?» и защищает переменные одной части кода от случайных изменений в другой.
+
+<Callout type="info">
+  Основы — `let`, `const` и `var`, блочная область, поднятие и временная мёртвая зона — разобраны в уроке
+  [Переменные и типы](/learn/js/variables). Здесь — как области видимости работают вместе и где из-за них появляются ошибки.
+</Callout>
+
+## Пример для разбора
+
+```js
+let x = 1;
+let y = 3;
+
+firstFunction();
+secondFunction();
+
+function firstFunction() {
+  let x = 1;
+  let y = 40;
+  console.log(x); // 1
+  console.log(y); // 40
+}
+
+function secondFunction() {
+  let x = 2;
+  console.log(x); // 2
+  console.log(y); // 3
+}
+```
+
+Что здесь происходит:
+
+- **Функции вызываются раньше, чем объявлены.** Это работает, потому что объявления функций поднимаются целиком.
+- **У каждой функции свои `x` и `y`.** `let x` внутри функции — новая переменная, которая **затеняет** глобальную.
+  Глобальные `x = 1` и `y = 3` при этом не меняются.
+- **В `secondFunction` своей `y` нет.** Движок не нашёл её внутри функции и взял из внешней (глобальной) области — `3`.
+
+## Уровни областей видимости
+
+```js
+const appName = 'Shop'; // глобальная (или модульная) область
+
+function showCart() {
+  const items = ['книга', 'ручка']; // область функции
+
+  if (items.length > 0) {
+    const message = `В корзине ${items.length} товара`; // блочная область
+    console.log(appName, message); // видно всё: и внешнее, и своё
+  }
+
+  console.log(message); // ReferenceError — message живёт только в блоке if
+}
+
+console.log(items); // ReferenceError — items живёт только в функции
+```
+
+| Область | Где создаётся | Что в ней живёт |
+|---|---|---|
+| Глобальная | Верхний уровень обычного скрипта | Переменные, видимые во всём коде страницы |
+| Модульная | Верхний уровень файла-модуля (`type="module"`, `import`/`export`) | Переменные, видимые только в этом файле |
+| Функциональная | Тело функции | Параметры, переменные функции и `var` |
+| Блочная | Любые `{ … }`: `if`, `for`, `while`, просто блок | Только `let`, `const` и `class` |
+
+Правило видимости работает **в одну сторону**: изнутри видно всё снаружи, а снаружи не видно того, что внутри.
+
+## Цепочка областей видимости
+
+Области вложены друг в друга, как матрёшки. Когда код обращается к переменной, движок ищет её
+**от текущей области наружу** — и берёт первую найденную:
+
+```js
+const level = 'глобальный';
+
+function outer() {
+  const level = 'outer';
+
+  function middle() {
+    function inner() {
+      console.log(level); // inner → middle → outer: нашлась в outer
+    }
+
+    inner();
+  }
+
+  middle();
+}
+
+outer(); // 'outer'
+```
+
+Если переменной нет ни в одной области до глобальной включительно — `ReferenceError: … is not defined`.
+
+Цепочка строится по тому, **где функция написана** в коде, а не откуда её вызвали. Поэтому такие области
+называют **лексическими** — подробный пример есть в уроке [Переменные и типы](/learn/js/variables).
+
+### Чтение и изменение внешних переменных
+
+Внутренняя функция может не только читать, но и **изменять** внешние переменные — если не объявляет свою с тем же именем:
+
+```js
+let count = 0;
+
+function increment() {
+  count++; // своей count нет — меняем внешнюю
+}
+
+function reset() {
+  let count = 0; // своя count — внешняя не изменится
+}
+
+increment();
+increment();
+reset();
+console.log(count); // 2
+```
+
+## Затенение
+
+Переменная во внутренней области с тем же именем, что и во внешней, **затеняет** внешнюю: внутри видна только своя.
+
+Так же работают и **параметры** функции — это переменные её области:
+
+```js
+const name = 'Глобальное имя';
+
+function greet(name) {
+  return `Привет, ${name}!`; // параметр name затеняет внешнюю переменную
+}
+
+greet('Анна'); // 'Привет, Анна!'
+greet(); // 'Привет, undefined!' — параметр есть, просто не передан; внешняя name не подставится
+```
+
+<Callout type="warning">
+  Затенение законно, но легко запутывает: читая код, приходится выяснять, какая из двух переменных имеется в виду.
+  Если внутренняя и внешняя переменные означают разное — дайте им разные имена.
+</Callout>
+
+## Глобальные переменные
+
+### Почему их стоит избегать
+
+Глобальную переменную может прочитать и изменить **любой** код на странице — ваш, библиотеки, расширения браузера.
+Чем больше глобальных переменных, тем выше шанс, что две части программы случайно используют одно имя.
+
+```js
+// файл cart.js
+var total = 0;
+
+// файл analytics.js — другой разработчик, другая задача
+var total = 150; // тихо перезаписал корзину
+```
+
+### var и window
+
+В обычном (не модульном) скрипте глобальные `var` и объявления функций становятся **свойствами `window`**,
+а `let` и `const` — нет:
+
+```js
+var oldStyle = 'var';
+let newStyle = 'let';
+
+window.oldStyle; // 'var'
+window.newStyle; // undefined
+```
+
+Так можно случайно перезаписать встроенные свойства браузера — например, `var name = …` меняет `window.name`.
+
+### Случайная глобальная переменная
+
+Присваивание переменной, которую нигде не объявили, в нестрогом режиме **молча создаёт глобальную переменную**:
+
+```js
+function setScore() {
+  score = 100; // забыли let — score стала глобальной
+}
+
+setScore();
+console.log(score); // 100 — переменная «утекла» из функции
+```
+
+<Callout type="tip">
+  В строгом режиме (`'use strict'`) такое присваивание бросает `ReferenceError: score is not defined` —
+  ошибка видна сразу. Модули (`type="module"`) и классы всегда работают в строгом режиме.
+</Callout>
+
+### Как не засорять глобальную область
+
+- **Модули.** В файлах с `import`/`export` или подключённых через `<script type="module">` переменные верхнего уровня
+  видны только внутри файла. Это основной способ в современном коде.
+- **Функции и блоки.** Держите переменные в той области, где они нужны, — объявляйте их как можно ближе к месту использования.
+- **IIFE** — немедленно вызываемая функция. Старый приём для создания отдельной области до появления модулей:
+
+```js
+(function () {
+  const secret = 'не попадёт в глобальную область';
+  console.log(secret);
+})();
+
+console.log(typeof secret); // 'undefined'
+```
+
+## Области видимости и замыкания
+
+Функция «помнит» области, в которых была создана, — даже после того, как внешняя функция уже завершилась:
+
+```js
+function createCounter() {
+  let count = 0; // доступна только функциям, созданным внутри createCounter
+
+  return function () {
+    count++;
+    return count;
+  };
+}
+
+const counter = createCounter();
+counter(); // 1
+counter(); // 2
+
+console.log(typeof count); // 'undefined' — снаружи count не видна
+```
+
+Переменная `count` спрятана в области `createCounter`: изменить её можно только через возвращённую функцию.
+Это **замыкание** — подробно в уроке [Замыкания](/learn/js/closures).
+
+## Типичные ошибки
+
+### Переменная объявлена не в той области
+
+```js
+function sumArray(numbers) {
+  for (let i = 0; i < numbers.length; i++) {
+    let sum = 0; // ❌ новая sum на каждой итерации
+    sum += numbers[i];
+  }
+
+  return sum; // ReferenceError — sum живёт только внутри цикла
+}
+```
+
+Переменная, которая должна накапливать значение между итерациями, объявляется **до** цикла:
+
+```js
+function sumArray(numbers) {
+  let sum = 0;
+
+  for (let i = 0; i < numbers.length; i++) {
+    sum += numbers[i];
+  }
+
+  return sum;
+}
+```
+
+### Ожидание, что var ограничена блоком
+
+```js
+function check(value) {
+  if (value > 10) {
+    var result = 'больше 10';
+  }
+
+  return result; // для value = 5 — undefined, а не ошибка: var видна во всей функции
+}
+```
+
+С `let` код сразу показал бы проблему (`ReferenceError`), а не вернул бы молча `undefined`.
+
+## Проверь себя
+
+<Quiz
+  client:visible
+  id="js/scope/example-output"
+  options={['1 3 2 3', '1 40 2 3', '1 40 2 40', 'ReferenceError']}
+  answer={1}
+>
+  Что выведет код?
+
+  ```js
+  let x = 1;
+  let y = 3;
+
+  first();
+  second();
+
+  function first() {
+    let x = 1;
+    let y = 40;
+    console.log(x, y);
+  }
+
+  function second() {
+    let x = 2;
+    console.log(x, y);
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Функции поднимаются целиком, поэтому их можно вызвать до объявления. В `first` свои `x = 1` и `y = 40`.
+    В `second` своя только `x = 2`, а `y` берётся из глобальной области — `3`. Свои `let y = 40` в `first`
+    на `second` не влияют: у каждой функции своя область.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/scope/function-var-outside" options={["'number'", "'undefined'", 'ReferenceError', '1']} answer={1}>
+  Что выведет код?
+
+  ```js
+  function setup() {
+    var a = 1;
+  }
+
+  setup();
+  console.log(typeof a);
+  ```
+
+  <Fragment slot="explanation">
+    `var` ограничена функцией, поэтому снаружи `a` не существует. `typeof` для необъявленной переменной
+    не бросает ошибку, а возвращает `'undefined'`. А вот `console.log(a)` дал бы `ReferenceError`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/scope/var-let-in-block"
+  options={["'number' 'number'", "'number' 'undefined'", "'undefined' 'undefined'", 'ReferenceError']}
+  answer={1}
+>
+  Что выведет код?
+
+  ```js
+  function test() {
+    if (true) {
+      var v = 1;
+      let l = 2;
+    }
+
+    console.log(typeof v, typeof l);
+  }
+
+  test();
+  ```
+
+  <Fragment slot="explanation">
+    `var v` видна во всей функции, поэтому после `if` она есть — `'number'`. `let l` живёт только в блоке `if`,
+    снаружи её нет — `typeof` даёт `'undefined'`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/scope/modify-outer" options={['0', '1', '2', 'ReferenceError']} answer={2}>
+  Что выведет код?
+
+  ```js
+  let count = 0;
+
+  function increment() {
+    count++;
+  }
+
+  function reset() {
+    let count = 0;
+  }
+
+  increment();
+  increment();
+  reset();
+  console.log(count);
+  ```
+
+  <Fragment slot="explanation">
+    `increment` своей `count` не объявляет и меняет внешнюю — после двух вызовов она равна `2`.
+    `reset` объявляет **свою** `count` через `let`, поэтому внешняя не меняется.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/scope/param-shadow" options={["'Привет, Глобал!'", "'Привет, undefined!'", 'ReferenceError', "'Привет, !'"]} answer={1}>
+  Что вернёт вызов?
+
+  ```js
+  const name = 'Глобал';
+
+  function greet(name) {
+    return `Привет, ${name}!`;
+  }
+
+  greet();
+  ```
+
+  <Fragment slot="explanation">
+    Параметр `name` — переменная области функции, и он затеняет внешнюю `name`. Аргумент не передан,
+    поэтому параметр равен `undefined`. Внешнее значение не подставляется: внутри функции видна только «своя» `name`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/scope/accidental-global" options={['100', 'undefined', 'ReferenceError']} answer={0}>
+  Что выведет код в обычном (не строгом) скрипте?
+
+  ```js
+  function setScore() {
+    score = 100;
+  }
+
+  setScore();
+  console.log(score);
+  ```
+
+  <Fragment slot="explanation">
+    `score` нигде не объявлена, и в нестрогом режиме присваивание создаёт **глобальную** переменную — она «утекает»
+    из функции. В строгом режиме или модуле было бы `ReferenceError: score is not defined`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/scope/closure-preview" options={["'секрет'", 'undefined', 'ReferenceError', 'Функцию']} answer={0}>
+  Что выведет код?
+
+  ```js
+  function outer() {
+    const secret = 'секрет';
+    return function () {
+      return secret;
+    };
+  }
+
+  const reveal = outer();
+  console.log(reveal());
+  ```
+
+  <Fragment slot="explanation">
+    Внутренняя функция создана в области `outer` и сохраняет к ней доступ, даже когда `outer` уже завершилась.
+    Это замыкание: `reveal()` возвращает `'секрет'`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/scope/sort-default" options={['[1, 2, 4, 7, 19]', '[1, 19, 2, 4, 7]', '[19, 7, 4, 2, 1]', '[1, 2, 19, 4, 7]']} answer={1}>
+  Что вернёт выражение? (Пригодится для задачи ниже.)
+
+  ```js
+  [1, 2, 4, 7, 19].sort();
+  ```
+
+  <Fragment slot="explanation">
+    Без функции сравнения `sort` превращает элементы в **строки** и сравнивает их посимвольно: `'19'` идёт сразу после `'1'`,
+    раньше `'2'`. Для чисел нужна функция сравнения: `.sort((a, b) => a - b)`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Почините inAscOrder" level="medium">
+  Функция должна возвращать `true`, если числа в массиве идут по возрастанию, но всегда возвращает `false`.
+  Найдите обе ошибки и исправьте.
+
+  ```js
+  function inAscOrder(arr) {
+    const elements = arr.map((item) => item).sort();
+
+    return elements === arr ? true : false;
+  }
+
+  inAscOrder([1, 2, 4, 7, 19]); // должно быть true
+  inAscOrder([1, 6, 10, 18, 2, 4, 20]); // false
+  inAscOrder([9, 8, 7, 6, 5, 4, 3, 2, 1]); // false
+  ```
+
+  <Fragment slot="hint">
+    Чему равно `[1, 2] === [1, 2]`? И что вернёт `[1, 2, 4, 7, 19].sort()`?
+    А нужна ли вообще сортировка, чтобы проверить порядок?
+  </Fragment>
+
+  <Fragment slot="solution">
+    Ошибки:
+
+    1. `elements === arr` сравнивает **ссылки**, а не содержимое. `map` создаёт новый массив, поэтому сравнение всегда `false`.
+    2. `sort()` без аргументов сортирует как строки: `[1, 2, 4, 7, 19]` превращается в `[1, 19, 2, 4, 7]`.
+
+    Сортировка здесь вообще не нужна — достаточно проверить, что каждый элемент не меньше предыдущего:
+
+    ```js
+    function inAscOrder(arr) {
+      for (let i = 1; i < arr.length; i++) {
+        if (arr[i] < arr[i - 1]) return false;
+      }
+
+      return true;
+    }
+    ```
+
+    Или короче, через `every`: `const inAscOrder = (arr) => arr.every((n, i) => i === 0 || n >= arr[i - 1]);`.
+    Оба варианта проходят массив один раз, а сортировка заняла бы больше времени и создала бы копию массива.
+    Заодно ушло `? true : false`: сравнение и так возвращает логическое значение.
+  </Fragment>
+</Task>
+
+<Task title="Почему сумма неверная" level="easy">
+  Функция должна вернуть сумму элементов, но для `[1, 2, 3]` возвращает `3`. Объясните и исправьте.
+
+  ```js
+  function sumArray(numbers) {
+    for (var i = 0; i < numbers.length; i++) {
+      var sum = 0;
+      sum += numbers[i];
+    }
+
+    return sum;
+  }
+  ```
+
+  <Fragment slot="hint">
+    Сколько раз выполняется `var sum = 0`? И почему `return sum` не выдаёт ошибку, хотя `sum` объявлена в цикле?
+  </Fragment>
+
+  <Fragment slot="solution">
+    `var sum = 0` стоит внутри цикла и **обнуляет** сумму на каждой итерации — в итоге остаётся только последний элемент, `3`.
+    Ошибки при этом нет: `var` видна во всей функции, поэтому `return sum` после цикла работает.
+
+    ```js
+    function sumArray(numbers) {
+      let sum = 0;
+
+      for (let i = 0; i < numbers.length; i++) {
+        sum += numbers[i];
+      }
+
+      return sum;
+    }
+    ```
+
+    Накопитель объявлен до цикла, а `let` вместо `var` не даст случайно использовать переменные за пределами их блоков.
+  </Fragment>
+</Task>
+
+<Task title="Предскажите вывод" level="medium">
+  Не запуская код, определите, что он выведет. Для каждой строки объясните, в какой области нашлась переменная.
+
+  ```js
+  const a = 'глобальная a';
+  let b = 'глобальная b';
+
+  function outer() {
+    const a = 'a из outer';
+    b = 'b изменена в outer';
+
+    function inner() {
+      const b = 'b из inner';
+      console.log(a);
+      console.log(b);
+    }
+
+    inner();
+  }
+
+  outer();
+  console.log(a);
+  console.log(b);
+  ```
+
+  <Fragment slot="solution">
+    ```
+    a из outer
+    b из inner
+    глобальная a
+    b изменена в outer
+    ```
+
+    - `a` в `inner` — своей нет, ищем в `outer`: там своя `a` → `'a из outer'`.
+    - `b` в `inner` — своя `const b` → `'b из inner'`.
+    - `a` снаружи — глобальная, `outer` объявила свою и глобальную не тронула → `'глобальная a'`.
+    - `b` снаружи — `outer` присвоила `b` без объявления и изменила **глобальную** переменную → `'b изменена в outer'`.
+      Собственная `b` в `inner` на это не влияет.
+  </Fragment>
+</Task>
+
+<Task title="Уберите глобальный счётчик" level="medium">
+  Счётчик хранится в глобальной переменной, и любой код может её сломать. Перепишите так, чтобы `nextId` работал
+  как прежде, но сам счётчик был недоступен снаружи.
+
+  ```js
+  let lastId = 0;
+
+  function nextId() {
+    lastId++;
+    return lastId;
+  }
+
+  nextId(); // 1
+  nextId(); // 2
+  lastId = -100; // а так быть не должно
+  ```
+
+  <Fragment slot="hint">
+    Спрячьте переменную в области внешней функции и верните из неё внутреннюю функцию.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function createIdGenerator() {
+      let lastId = 0;
+
+      return function () {
+        lastId++;
+        return lastId;
+      };
+    }
+
+    const nextId = createIdGenerator();
+
+    nextId(); // 1
+    nextId(); // 2
+    console.log(typeof lastId); // 'undefined' — снаружи переменной нет
+    ```
+
+    `lastId` теперь живёт в области `createIdGenerator`. Доступ к ней есть только у возвращённой функции —
+    это замыкание. Бонус: можно создать несколько независимых генераторов, у каждого будет свой счётчик.
+  </Fragment>
+</Task>

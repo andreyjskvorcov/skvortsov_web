@@ -1,0 +1,50 @@
+---
+import { buttonVariants } from '@/components/ui/button';
+---
+
+<div class="not-prose my-6 grid gap-3 rounded-lg border border-dashed p-4" data-progress-demo>
+  <div class="flex items-center gap-3">
+    <button type="button" class={buttonVariants()} data-start>Запустить обработку</button>
+    <span class="font-mono text-sm tabular-nums" data-text>0%</span>
+  </div>
+  <div class="h-2 overflow-hidden rounded-full bg-muted">
+    <div class="h-full w-0 bg-primary transition-[width]" data-bar></div>
+  </div>
+  <p class="text-sm text-muted-foreground" data-result>Нажмите кнопку, чтобы обработать 20 элементов</p>
+</div>
+
+<script>
+  // Тот же алгоритм, что в уроке: while + await — страница обновляется между элементами
+  async function processItem(item: number) {
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    console.log(`Элемент ${item} обработан`);
+  }
+
+  for (const demo of document.querySelectorAll<HTMLElement>('[data-progress-demo]')) {
+    const button = demo.querySelector<HTMLButtonElement>('[data-start]')!;
+    const bar = demo.querySelector<HTMLElement>('[data-bar]')!;
+    const text = demo.querySelector<HTMLElement>('[data-text]')!;
+    const result = demo.querySelector<HTMLElement>('[data-result]')!;
+
+    button.addEventListener('click', async () => {
+      const items = Array.from({ length: 20 }, (_, i) => i + 1);
+      const total = items.length;
+      let processed = 0;
+
+      button.disabled = true;
+      result.textContent = 'Обработка…';
+
+      while (processed < total) {
+        await processItem(items[processed]);
+        processed++;
+
+        const percent = Math.round((processed / total) * 100);
+        bar.style.width = `${percent}%`;
+        text.textContent = `${percent}%`;
+      }
+
+      result.textContent = 'Обработка завершена';
+      button.disabled = false;
+    });
+  }
+</script>

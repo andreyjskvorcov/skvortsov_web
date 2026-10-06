@@ -1,0 +1,631 @@
+---
+title: Метод forEach
+description: Перебор массива через forEach — синтаксис, особенности, ловушки с изменением массива и async, выбор между forEach, for...of и map
+section: js
+order: 14
+level: beginner
+tags: [arrays, forEach, callbacks]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+`forEach` — метод массива, который вызывает функцию-колбэк **для каждого элемента** по порядку.
+Это самый простой способ «сделать что-то с каждым элементом»: вывести, отрисовать, отправить, посчитать.
+
+## Синтаксис
+
+```js
+array.forEach((element, index, array) => {
+  // тело выполняется для каждого элемента
+});
+```
+
+Колбэк получает три аргумента:
+
+| Аргумент | Что это |
+|---|---|
+| `element` | текущий элемент |
+| `index` | его индекс |
+| `array` | весь массив, по которому идёт перебор |
+
+Брать все три не обязательно — объявите только те, что нужны. Подробнее о колбэках — в уроке [Колбэки](/learn/js/callbacks).
+
+```js
+const fruits = ['Яблоко', 'Банан', 'Мандарин'];
+
+fruits.forEach(function (element, index, array) {
+  console.log(`${index}. ${element} — ${array}`);
+});
+// 0. Яблоко — Яблоко,Банан,Мандарин
+// 1. Банан — Яблоко,Банан,Мандарин
+// 2. Мандарин — Яблоко,Банан,Мандарин
+```
+
+Массив в шаблонной строке превращается в строку через запятую без пробелов — поэтому `${array}` выводит
+`Яблоко,Банан,Мандарин`.
+
+### Стрелочная функция и нумерация
+
+Чаще пишут стрелочную функцию. А для «человеческой» нумерации с единицы прибавляют к индексу 1:
+
+```js
+const myFruits = ['Яблоко', 'Банан', 'Мандарин'];
+
+myFruits.forEach((fruit, i) => {
+  console.log(`${i + 1}. ${fruit}`);
+});
+// 1. Яблоко
+// 2. Банан
+// 3. Мандарин
+```
+
+Давайте параметрам понятные имена: `fruit` вместо `e`, `user` вместо `u` — так тело колбэка читается без подсказок.
+
+### Все три аргумента
+
+```js
+fruits.forEach((fruit, index, array) => {
+  console.log(`Индекс: ${index}, элемент: ${fruit}, длина массива: ${array.length}`);
+});
+// Индекс: 0, элемент: Яблоко, длина массива: 3
+// Индекс: 1, элемент: Банан, длина массива: 3
+// Индекс: 2, элемент: Мандарин, длина массива: 3
+```
+
+### Короткая запись
+
+Если в колбэке одно действие, фигурные скобки можно опустить:
+
+```js
+const numbers = [1, 2, 3, 4];
+
+numbers.forEach((num) => console.log(num * 2)); // 2, 4, 6, 8
+```
+
+Колбэк можно объявить и отдельно, а в `forEach` передать по имени:
+
+```js
+function logPrice(price) {
+  console.log(`${price} ₽`);
+}
+
+[100, 250, 400].forEach(logPrice); // 100 ₽, 250 ₽, 400 ₽
+```
+
+## Особенности
+
+### 1. forEach ничего не возвращает
+
+```js
+const numbers = [1, 2, 3, 4];
+const result = numbers.forEach((num) => num * 2);
+
+console.log(result); // undefined
+```
+
+Что бы ни возвращал колбэк, сам `forEach` всегда возвращает `undefined`. Его результат нельзя сохранить
+и нельзя продолжить цепочкой: `arr.forEach(…).filter(…)` — ошибка.
+
+Если нужен **новый массив** — используйте `map`, если **часть элементов** — `filter`, если **одно значение** — `reduce`:
+
+```js
+const doubled = numbers.map((num) => num * 2); // [2, 4, 6, 8]
+```
+
+### 2. forEach нельзя прервать
+
+В `forEach` не работает `break` — это синтаксическая ошибка. А `return` внутри колбэка завершает только **текущий вызов**
+колбэка, и перебор продолжается со следующего элемента — то есть работает как `continue`:
+
+```js
+[1, 2, 3, 4].forEach((num) => {
+  if (num === 2) return; // пропустить 2 — но не остановиться
+  console.log(num);
+});
+// 1, 3, 4
+```
+
+Если нужно остановиться досрочно, выберите другой инструмент:
+
+```js
+const numbers = [3, 8, -1, 5, 12];
+
+// for...of с break
+for (const num of numbers) {
+  if (num < 0) break;
+  console.log(num); // 3, 8
+}
+
+// find — найти первый подходящий
+numbers.find((num) => num < 0); // -1
+
+// some / every — проверить условие, остановившись на первом ответе
+numbers.some((num) => num < 0); // true
+```
+
+### 3. Изменение массива во время перебора
+
+Изменить **значения** элементов через третий аргумент можно:
+
+```js
+const numbers = [1, 2, 3];
+
+numbers.forEach((num, index, arr) => {
+  arr[index] = num * 2;
+});
+
+console.log(numbers); // [2, 4, 6] — исходный массив изменён
+```
+
+Но обычно лучше так не делать: исходные данные теряются, а другой код, который рассчитывал на старые значения,
+неожиданно сломается. Тот же результат без изменения исходного массива — через `map`:
+`const doubled = numbers.map((num) => num * 2)`.
+
+А вот **добавлять и удалять** элементы во время `forEach` по-настоящему опасно:
+
+```js
+const letters = ['a', 'b', 'c', 'd'];
+
+letters.forEach((letter, i) => {
+  if (letter === 'b') letters.splice(i, 1); // удалили 'b' во время перебора
+  console.log(letter);
+});
+// a, b, d — 'c' пропущена!
+```
+
+После удаления `'b'` все элементы сдвинулись влево: `'c'` встала на индекс 1, который уже пройден,
+и `forEach` перешёл сразу к индексу 2 — к `'d'`.
+
+<Callout type="warning">
+  Не меняйте **состав** массива внутри `forEach`. Чтобы удалить элементы — создайте новый массив через `filter`:
+  `const rest = letters.filter((letter) => letter !== 'b')`. Элементы, добавленные через `push` во время перебора,
+  `forEach` вообще не обработает — он заранее «запомнил», сколько их было.
+</Callout>
+
+### 4. forEach не ждёт async-колбэки
+
+Если колбэк асинхронный, `forEach` запустит его для всех элементов **сразу** и не будет дожидаться завершения:
+
+```js
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const ids = [1, 2, 3];
+
+ids.forEach(async (id) => {
+  await wait(100);
+  console.log(`Загружен ${id}`);
+});
+
+console.log('Готово');
+// Готово — выводится ПЕРВЫМ
+// Загружен 1, Загружен 2, Загружен 3 — через 100 мс
+```
+
+Чтобы обрабатывать элементы по очереди и дождаться окончания, используйте `for...of` с `await`:
+
+```js
+for (const id of ids) {
+  await wait(100);
+  console.log(`Загружен ${id}`);
+}
+
+console.log('Готово'); // теперь — в самом конце
+```
+
+## forEach не только для массивов
+
+У некоторых других коллекций тоже есть `forEach`:
+
+```js
+// Список элементов страницы
+document.querySelectorAll('.card').forEach((card) => {
+  card.classList.add('visible');
+});
+
+// Set — перебирает значения
+new Set(['js', 'css']).forEach((tag) => console.log(tag)); // js, css
+
+// Map — колбэк получает значение, потом ключ
+new Map([['ru', 'Россия'], ['kz', 'Казахстан']]).forEach((country, code) => {
+  console.log(`${code}: ${country}`); // ru: Россия, kz: Казахстан
+});
+```
+
+У обычных объектов `forEach` нет — `user.forEach(…)` даст `TypeError: user.forEach is not a function`.
+Объект сначала превращают в массив:
+
+```js
+const user = { name: 'Аня', age: 25 };
+
+Object.entries(user).forEach(([key, value]) => {
+  console.log(`${key}: ${value}`); // name: Аня, age: 25
+});
+```
+
+## forEach, for...of или map
+
+| Нужно | Используйте |
+|---|---|
+| Сделать что-то с каждым элементом: вывести, отрисовать, отправить | `forEach` или `for...of` |
+| Остановиться на середине (`break`) | `for...of` или `for` |
+| Дождаться `await` на каждом шаге | `for...of` |
+| Получить новый массив из преобразованных элементов | `map` |
+| Отобрать часть элементов | `filter` |
+| Посчитать одно значение — сумму, максимум, объект | `reduce` (или `forEach` со внешней переменной) |
+| Найти первый подходящий элемент | `find` |
+
+Правило: если в `forEach` вы делаете `push` в новый массив — скорее всего, нужен `map` или `filter`:
+
+```js
+// Так работает, но длиннее и легко ошибиться
+const names = [];
+users.forEach((user) => {
+  names.push(user.name);
+});
+
+// То же самое — короче и без изменяемой переменной
+const names = users.map((user) => user.name);
+```
+
+## Практика: список на странице
+
+`forEach` хорошо подходит для **побочных эффектов** — действий, которые меняют что-то снаружи: страницу, консоль, сеть.
+
+```html
+<ul id="todo"></ul>
+```
+
+```js
+const tasks = [
+  { title: 'Купить хлеб', done: true },
+  { title: 'Позвонить маме', done: false },
+  { title: 'Сделать зарядку', done: false },
+];
+
+const list = document.getElementById('todo');
+
+tasks.forEach((task, i) => {
+  const item = document.createElement('li');
+  item.textContent = `${i + 1}. ${task.title}`;
+
+  if (task.done) {
+    item.style.textDecoration = 'line-through';
+  }
+
+  list.append(item);
+});
+```
+
+## Проверь себя
+
+<Quiz
+  client:visible
+  id="js/foreach/array-in-template"
+  options={["'0. Яблоко — Яблоко,Банан'", "'0. Яблоко — [Яблоко, Банан]'", "'0. Яблоко — [object Array]'", "'0. Яблоко — undefined'"]}
+  answer={0}
+>
+  Что выведется на первой итерации?
+
+  ```js
+  ['Яблоко', 'Банан'].forEach((element, index, array) => {
+    console.log(`${index}. ${element} — ${array}`);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    Третий аргумент — весь массив. В шаблонной строке массив превращается в строку через `join(',')` —
+    элементы через запятую, без скобок и пробелов.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/foreach/returns-undefined" options={['[2, 4, 6]', '[1, 2, 3]', 'undefined', '6']} answer={2}>
+  Чему равно `result`?
+
+  ```js
+  const result = [1, 2, 3].forEach((n) => n * 2);
+  ```
+
+  <Fragment slot="explanation">
+    `forEach` всегда возвращает `undefined` — значения из колбэка никуда не собираются. Для нового массива нужен `map`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/foreach/return-continue" options={['1', '1 3 4', '1 2 3 4', '3 4']} answer={1}>
+  Что выведет код?
+
+  ```js
+  [1, 2, 3, 4].forEach((num) => {
+    if (num === 2) return;
+    console.log(num);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    `return` завершает только текущий вызов колбэка — для элемента `2`. Перебор продолжается, поэтому `3` и `4` тоже выводятся.
+    Остановить `forEach` целиком нельзя.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/foreach/break" options={['1, затем остановится', '1 2 3', 'SyntaxError', 'undefined']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  [1, 2, 3].forEach((num) => {
+    console.log(num);
+    if (num === 1) break;
+  });
+  ```
+
+  <Fragment slot="explanation">
+    `break` работает только внутри цикла или `switch`. Колбэк — это отдельная функция, и `break` в ней не относится
+    ни к какому циклу — `SyntaxError: Illegal break statement`. Код не выполнится вообще.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/foreach/splice-skips" options={['a b c d', 'a c d', 'a b d', 'a b c']} answer={2}>
+  Что выведет код?
+
+  ```js
+  const letters = ['a', 'b', 'c', 'd'];
+
+  letters.forEach((letter, i) => {
+    if (letter === 'b') letters.splice(i, 1);
+    console.log(letter);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    На индексе 1 выводится `'b'` и удаляется из массива. Элементы сдвигаются: `'c'` встаёт на индекс 1, который уже пройден.
+    Следующий шаг — индекс 2, а там теперь `'d'`. Буква `'c'` пропущена.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/foreach/push-during" options={['3', '6', 'Бесконечно', '0']} answer={0}>
+  Сколько раз выполнится колбэк?
+
+  ```js
+  const numbers = [1, 2, 3];
+
+  numbers.forEach((num) => {
+    numbers.push(num);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    `forEach` определяет количество итераций в самом начале — по длине массива, равной 3. Новые элементы он не обходит,
+    поэтому колбэк вызовется 3 раза, а массив станет `[1, 2, 3, 1, 2, 3]`. С обычным `for` и `i < numbers.length` цикл стал бы бесконечным.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/foreach/async"
+  options={["'Загружен 1', 'Загружен 2', 'Готово'", "'Готово', 'Загружен 1', 'Загружен 2'", "Только 'Готово'", "'Загружен 1', 'Готово', 'Загружен 2'"]}
+  answer={1}
+>
+  В каком порядке появятся сообщения?
+
+  ```js
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  [1, 2].forEach(async (id) => {
+    await wait(100);
+    console.log(`Загружен ${id}`);
+  });
+
+  console.log('Готово');
+  ```
+
+  <Fragment slot="explanation">
+    `forEach` вызывает async-колбэки и сразу идёт дальше — он не ждёт их завершения. Поэтому `'Готово'` выводится первым,
+    а сообщения о загрузке — через 100 мс. Чтобы дождаться, нужен `for...of` с `await`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/foreach/object" options={['name age', 'Аня 25', 'undefined', 'TypeError']} answer={3}>
+  Что произойдёт?
+
+  ```js
+  const user = { name: 'Аня', age: 25 };
+  user.forEach((value) => console.log(value));
+  ```
+
+  <Fragment slot="explanation">
+    `forEach` — метод массивов (и некоторых коллекций), у обычного объекта его нет:
+    `TypeError: user.forEach is not a function`. Перебрать объект можно через `Object.entries(user).forEach(…)`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Нумерованный список" level="easy">
+  Выведите каждый элемент массива с номером и отметкой, последний ли он.
+
+  ```js
+  const steps = ['Открыть редактор', 'Написать код', 'Запустить'];
+  // 1. Открыть редактор
+  // 2. Написать код
+  // 3. Запустить (последний шаг)
+  ```
+
+  <Fragment slot="hint">
+    Используйте третий аргумент колбэка — массив, — чтобы узнать его длину.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    steps.forEach((step, index, array) => {
+      const isLast = index === array.length - 1;
+      console.log(`${index + 1}. ${step}${isLast ? ' (последний шаг)' : ''}`);
+    });
+    ```
+
+    `array.length - 1` — индекс последнего элемента. Третий аргумент удобен, когда колбэк объявлен отдельно
+    и не видит переменную `steps`.
+  </Fragment>
+</Task>
+
+<Task title="Сумма корзины" level="easy">
+  С помощью `forEach` посчитайте общую стоимость корзины с учётом количества товаров.
+
+  ```js
+  const cart = [
+    { name: 'Хлеб', price: 60, qty: 2 },
+    { name: 'Молоко', price: 90, qty: 1 },
+    { name: 'Сыр', price: 450, qty: 1 },
+  ];
+  // 660
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    let total = 0;
+
+    cart.forEach((item) => {
+      total += item.price * item.qty;
+    });
+
+    console.log(total); // 660
+    ```
+
+    Переменная `total` объявлена снаружи, а колбэк её изменяет — это побочный эффект, ради которого `forEach` и нужен.
+    То же самое без внешней переменной — через `reduce`: `cart.reduce((sum, item) => sum + item.price * item.qty, 0)`.
+  </Fragment>
+</Task>
+
+<Task title="Плюс, минус, ноль" level="easy">
+  Посчитайте, сколько в массиве положительных, отрицательных чисел и нулей. Результат — объект.
+
+  ```js
+  const numbers = [3, -1, 0, 8, -5, 0, 2];
+  // { positive: 3, negative: 2, zero: 2 }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const counts = { positive: 0, negative: 0, zero: 0 };
+
+    numbers.forEach((n) => {
+      if (n > 0) counts.positive++;
+      else if (n < 0) counts.negative++;
+      else counts.zero++;
+    });
+    ```
+
+    Объект объявлен через `const`, но его свойства менять можно — `const` запрещает только переприсвоить переменную.
+  </Fragment>
+</Task>
+
+<Task title="Группировка по ролям" level="medium">
+  Сгруппируйте пользователей по ролям: получите объект, где ключ — роль, а значение — массив имён.
+
+  ```js
+  const users = [
+    { name: 'Аня', role: 'admin' },
+    { name: 'Иван', role: 'user' },
+    { name: 'Олег', role: 'user' },
+    { name: 'Мария', role: 'editor' },
+  ];
+  // { admin: ['Аня'], user: ['Иван', 'Олег'], editor: ['Мария'] }
+  ```
+
+  <Fragment slot="hint">
+    Если ключа ещё нет, создайте для него пустой массив, а потом добавьте имя.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const byRole = {};
+
+    users.forEach((user) => {
+      if (!byRole[user.role]) {
+        byRole[user.role] = [];
+      }
+      byRole[user.role].push(user.name);
+    });
+    ```
+
+    Короче проверку можно записать через `??=`: `(byRole[user.role] ??= []).push(user.name)` — создать массив, если его нет,
+    и сразу добавить имя.
+  </Fragment>
+</Task>
+
+<Task title="forEach → map и filter" level="medium">
+  Перепишите код без `forEach` и `push`, используя `filter` и `map`.
+
+  ```js
+  const products = [
+    { name: 'Ноутбук', price: 85000, inStock: true },
+    { name: 'Мышь', price: 1500, inStock: false },
+    { name: 'Клавиатура', price: 4500, inStock: true },
+  ];
+
+  const result = [];
+
+  products.forEach((product) => {
+    if (product.inStock) {
+      result.push(product.name.toUpperCase());
+    }
+  });
+
+  // ['НОУТБУК', 'КЛАВИАТУРА']
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const result = products
+      .filter((product) => product.inStock)
+      .map((product) => product.name.toUpperCase());
+    ```
+
+    `if` внутри `forEach` превратился в `filter`, а `push` преобразованного значения — в `map`. Результат можно объявить
+    через `const` сразу со значением, без пустого массива, который потом заполняется.
+  </Fragment>
+</Task>
+
+<Task title="Остановиться на первом" level="medium">
+  Код должен найти первого пользователя младше 18 лет и остановиться, но проверяет всех. Почему?
+  Перепишите двумя способами: через `for...of` с `break` и через `find`.
+
+  ```js
+  const users = [
+    { name: 'Аня', age: 25 },
+    { name: 'Иван', age: 16 },
+    { name: 'Олег', age: 14 },
+  ];
+
+  let found;
+
+  users.forEach((user) => {
+    console.log(`Проверяем ${user.name}`);
+    if (user.age < 18) {
+      found = user;
+      return;
+    }
+  });
+  ```
+
+  <Fragment slot="solution">
+    `return` завершает только текущий вызов колбэка, а `forEach` всё равно проходит весь массив.
+    Кроме того, здесь `found` в итоге окажется **Олегом** — последним подходящим, а не первым: каждое совпадение перезаписывает переменную.
+
+    ```js
+    // for...of + break
+    let found;
+    for (const user of users) {
+      console.log(`Проверяем ${user.name}`);
+      if (user.age < 18) {
+        found = user;
+        break;
+      }
+    }
+
+    // find — сам останавливается на первом совпадении
+    const firstMinor = users.find((user) => user.age < 18); // { name: 'Иван', age: 16 }
+    ```
+
+    Оба варианта проверяют только Аню и Ивана и находят Ивана.
+  </Fragment>
+</Task>

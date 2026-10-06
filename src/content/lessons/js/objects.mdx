@@ -1,0 +1,767 @@
+---
+title: Объекты
+description: Создание, свойства, методы, this, перебор и копирование объектов
+section: js
+order: 3
+level: beginner
+tags: [objects, this, destructuring]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Объект** — это набор свойств вида «ключ: значение». Ключи — строки (или символы), значения — что угодно:
+числа, строки, массивы, функции и другие объекты.
+
+## Создание объектов
+
+```js
+// 1. Литерал объекта — основной способ
+const literal = {
+  key1: 'value1',
+  key2: 'value2',
+};
+
+// 2. Конструктор Object — то же самое, но длиннее
+const constructed = new Object();
+constructed.key1 = 'value1';
+
+// 3. Object.create(proto) — объект с указанным прототипом
+const withoutProto = Object.create(null);
+withoutProto.key1 = 'value1';
+```
+
+<Callout type="info">
+  `Object.create(null)` создаёт объект **без прототипа**: у него нет `toString`, `hasOwnProperty` и других
+  унаследованных методов. Такие объекты удобны как «чистые» словари, но `withoutProto.hasOwnProperty('key1')`
+  на них упадёт с ошибкой — используйте `Object.hasOwn(withoutProto, 'key1')`.
+</Callout>
+
+## Доступ к свойствам
+
+```js
+const user = {
+  name: 'Алексей',
+  age: 35,
+};
+
+// Через точку — когда имя свойства известно заранее
+user.name; // 'Алексей'
+
+// Через квадратные скобки — когда имя в переменной или не является валидным идентификатором
+user['age']; // 35
+
+const key = 'name';
+user[key]; // 'Алексей'
+
+const headers = { 'Content-Type': 'application/json' };
+headers['Content-Type']; // через точку так не получится
+```
+
+Обращение к несуществующему свойству не ошибка — вернётся `undefined`.
+
+## Добавление, изменение и удаление
+
+```js
+user.city = 'Москва'; // добавили
+user.age = 36; // изменили
+user.isAdmin = true;
+
+delete user.isAdmin; // удалили
+
+console.log(user); // { name: 'Алексей', age: 36, city: 'Москва' }
+```
+
+<Callout type="tip">
+  `const` запрещает только переприсвоить переменную (`user = {}`), а менять свойства объекта можно.
+</Callout>
+
+## Сокращённые свойства и вычисляемые ключи
+
+Если имя свойства совпадает с именем переменной, можно написать его один раз.
+Ключ в квадратных скобках вычисляется — в объект попадёт **значение** выражения.
+
+```js
+const name = 'Иван';
+const age = 30;
+const field = 'position';
+
+const employee = {
+  name, // то же, что name: name
+  age,
+  [field]: 'Developer', // ключ берётся из переменной → position: 'Developer'
+  [`is${'Admin'}`]: false, // → isAdmin: false
+};
+```
+
+## Методы и this
+
+**Метод** — это свойство, значение которого — функция. Внутри метода `this` указывает на объект,
+**через который метод вызвали**.
+
+```js
+const user = {
+  name: 'Алексей',
+
+  // полная запись
+  sayHi: function () {
+    console.log('Привет!');
+  },
+
+  // сокращённая запись — обычно используют её
+  introduce() {
+    console.log(`Привет, я ${this.name}`);
+  },
+};
+
+user.sayHi(); // 'Привет!'
+user.introduce(); // 'Привет, я Алексей'
+```
+
+<Callout type="warning">
+  Не делайте методы стрелочными функциями: у стрелки нет своего `this`, она берёт его снаружи объекта,
+  и `this.name` будет не тем, что вы ждёте.
+</Callout>
+
+## Проверка наличия свойства
+
+```js
+const user = { name: 'Алексей', city: 'Москва' };
+
+// Оператор in — ищет и в самом объекте, и в прототипе
+'name' in user; // true
+'isAdmin' in user; // false
+'toString' in user; // true — унаследовано от Object.prototype
+
+// Только собственные свойства
+user.hasOwnProperty('name'); // true
+user.hasOwnProperty('toString'); // false
+Object.hasOwn(user, 'name'); // true — современная замена hasOwnProperty
+```
+
+Проверка `user.age !== undefined` не отличает «свойства нет» от «свойство есть и равно `undefined`» —
+для этого и нужны `in` и `Object.hasOwn`.
+
+## Перебор свойств
+
+```js
+const user = { name: 'Алексей', age: 35, city: 'Москва' };
+
+for (const key in user) {
+  console.log(`${key}: ${user[key]}`);
+}
+
+Object.keys(user); // ['name', 'age', 'city']
+Object.values(user); // ['Алексей', 35, 'Москва']
+Object.entries(user); // [['name', 'Алексей'], ['age', 35], ['city', 'Москва']]
+
+for (const [key, value] of Object.entries(user)) {
+  console.log(key, value);
+}
+```
+
+`for...in` перебирает и унаследованные перечисляемые свойства, а `Object.keys/values/entries` — только собственные,
+поэтому в современном коде чаще используют их.
+
+## Деструктуризация
+
+Деструктуризация достаёт свойства объекта в переменные — в том числе прямо в параметрах функции.
+
+```js
+const user = {
+  name: 'Елена',
+  age: 28,
+  address: { city: 'Москва' },
+};
+
+const { name, age } = user;
+const { name: userName } = user; // с переименованием
+const { role = 'guest' } = user; // со значением по умолчанию
+const {
+  address: { city },
+} = user; // из вложенного объекта
+
+function greet({ name, age }) {
+  return `${name}, ${age}`;
+}
+
+greet(user); // 'Елена, 28'
+```
+
+## Копирование объектов
+
+Объекты хранятся и передаются **по ссылке**: присваивание не копирует объект, а создаёт вторую ссылку на тот же.
+
+```js
+const user = { name: 'Иван' };
+const admin = user; // та же ссылка
+
+admin.name = 'Пётр';
+console.log(user.name); // 'Пётр' — изменили «оба» объекта
+```
+
+Чтобы получить отдельный объект, его нужно скопировать:
+
+```js
+const user = { name: 'Иван', address: { city: 'Москва' } };
+
+// Поверхностные копии — копируют только первый уровень
+const clone = Object.assign({}, user);
+const spreadClone = { ...user };
+
+spreadClone.name = 'Пётр'; // user.name не изменится
+spreadClone.address.city = 'Казань'; // а user.address.city — изменится!
+
+// Глубокая копия — копирует все уровни
+const deepClone = structuredClone(user);
+```
+
+<Callout type="warning">
+  Старый приём `JSON.parse(JSON.stringify(obj))` тоже делает глубокую копию, но теряет методы и значения `undefined`,
+  а даты превращает в строки. Для данных используйте `structuredClone` — он корректно копирует `Date`, `Map`, `Set`
+  и вложенные объекты (но не функции).
+</Callout>
+
+## Практика: библиотека
+
+Соберём всё вместе: объект с данными, массивом вложенных объектов и методами, которые работают через `this`.
+
+```js
+const library = {
+  name: 'Центральная городская библиотека',
+  address: 'ул. Ленина, 10',
+  books: [],
+
+  addBook(title, author, year, isAvailable = true) {
+    const book = {
+      id: this.books.length + 1,
+      title,
+      author,
+      year,
+      isAvailable,
+      // у каждой книги свой метод — this внутри указывает на книгу
+      getInfo() {
+        return `${this.title} (${this.author}), ${this.year} — ${this.isAvailable ? 'доступна' : 'на руках'}`;
+      },
+    };
+
+    this.books.push(book);
+    console.log(`Книга «${title}» добавлена`);
+  },
+
+  findBook(title) {
+    return this.books.find((book) => book.title.toLowerCase() === title.toLowerCase());
+  },
+
+  lendBook(title, readerName) {
+    const book = this.findBook(title);
+
+    if (!book) {
+      console.log(`Книги «${title}» нет в библиотеке`);
+    } else if (!book.isAvailable) {
+      console.log(`Книга «${title}» уже на руках у читателя ${book.reader}`);
+    } else {
+      book.isAvailable = false;
+      book.reader = readerName; // динамически добавили свойство
+      console.log(`Книга «${title}» выдана читателю ${readerName}`);
+    }
+  },
+
+  returnBook(title) {
+    const book = this.findBook(title);
+
+    if (book && !book.isAvailable) {
+      book.isAvailable = true;
+      console.log(`Книга «${title}» возвращена. Спасибо, ${book.reader}!`);
+      delete book.reader; // убрали временное свойство
+    } else {
+      console.log('Эта книга не выдавалась или не принадлежит библиотеке');
+    }
+  },
+
+  displayAllBooks() {
+    console.log(`${this.name}, адрес: ${this.address}`);
+    this.books.forEach((book) => console.log(`${book.id}. ${book.getInfo()}`));
+  },
+};
+
+library.addBook('Преступление и наказание', 'Фёдор Достоевский', 1866);
+library.addBook('Мастер и Маргарита', 'Михаил Булгаков', 1967);
+library.addBook('Всадник без головы', 'Майн Рид', 1865);
+
+library.lendBook('Мастер и Маргарита', 'Иван'); // выдана читателю Иван
+library.lendBook('Мастер и Маргарита', 'Пётр'); // уже на руках у читателя Иван
+library.returnBook('Мастер и Маргарита'); // возвращена. Спасибо, Иван!
+library.returnBook('Война и мир'); // не выдавалась или не принадлежит библиотеке
+
+library.displayAllBooks();
+// Центральная городская библиотека, адрес: ул. Ленина, 10
+// 1. Преступление и наказание (Фёдор Достоевский), 1866 — доступна
+// 2. Мастер и Маргарита (Михаил Булгаков), 1967 — доступна
+// 3. Всадник без головы (Майн Рид), 1865 — доступна
+
+// Дополнительные операции
+'address' in library; // true
+Object.keys(library.books[0]); // ['id', 'title', 'author', 'year', 'isAvailable', 'getInfo']
+
+const bookCopy = { ...library.books[0] }; // поверхностная копия книги
+bookCopy.getInfo(); // метод скопировался, this указывает уже на bookCopy
+
+library.workingHours = '9:00–20:00'; // свойство можно добавить в любой момент
+```
+
+<Callout type="tip">
+  Обратите внимание на `findBook`: он только ищет и возвращает книгу, а сообщения выводят методы, которые его вызывают.
+  Так один и тот же поиск можно переиспользовать без лишнего вывода в консоль.
+</Callout>
+
+## Проверь себя
+
+<Quiz client:visible id="js/objects/reference" options={['1', '2', 'undefined', 'TypeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const a = { n: 1 };
+  const b = a;
+  b.n = 2;
+  console.log(a.n);
+  ```
+
+  <Fragment slot="explanation">
+    `b = a` не копирует объект: обе переменные ссылаются на один и тот же объект, поэтому изменение через `b` видно и через `a`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/objects/shallow-copy" options={["'Москва'", "'Казань'", 'undefined', 'TypeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const user = { name: 'Аня', address: { city: 'Москва' } };
+  const copy = { ...user };
+
+  copy.address.city = 'Казань';
+  console.log(user.address.city);
+  ```
+
+  <Fragment slot="explanation">
+    Spread делает **поверхностную** копию: `copy.address` и `user.address` — это ссылка на один и тот же вложенный объект.
+    Для независимой копии всех уровней используйте `structuredClone(user)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/objects/compare" options={['true', 'false', 'TypeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  console.log({ a: 1 } === { a: 1 });
+  ```
+
+  <Fragment slot="explanation">
+    Объекты сравниваются по ссылке, а не по содержимому. Это два разных объекта, поэтому `false` —
+    даже если свойства у них одинаковые.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/objects/in-vs-own" options={['true true', 'true false', 'false false', 'false true']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const user = { name: 'Аня' };
+  console.log('toString' in user, Object.hasOwn(user, 'toString'));
+  ```
+
+  <Fragment slot="explanation">
+    `in` ищет свойство и в цепочке прототипов, а `toString` унаследован от `Object.prototype` — поэтому `true`.
+    `Object.hasOwn` проверяет только собственные свойства объекта — `false`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/objects/keys-order"
+  options={["['b', '2', 'a', '1']", "['1', '2', 'b', 'a']", "['a', 'b', '1', '2']", "['b', 'a', '1', '2']"]}
+  answer={1}
+>
+  В каком порядке будут ключи?
+
+  ```js
+  const obj = { b: 1, 2: 'two', a: 2, 1: 'one' };
+  console.log(Object.keys(obj));
+  ```
+
+  <Fragment slot="explanation">
+    Ключи-целые числа идут первыми по возрастанию, а строковые — в порядке добавления.
+    Все ключи при этом — строки: `'1'`, а не `1`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/objects/json-clone"
+  options={["['date', 'greet', 'note']", "['date', 'note']", "['date']", '[]']}
+  answer={2}
+>
+  Какие ключи останутся после копирования через JSON?
+
+  ```js
+  const obj = {
+    date: new Date(0),
+    greet() {},
+    note: undefined,
+  };
+
+  const copy = JSON.parse(JSON.stringify(obj));
+  console.log(Object.keys(copy));
+  ```
+
+  <Fragment slot="explanation">
+    `JSON.stringify` пропускает функции и значения `undefined`, а дату превращает в строку.
+    Поэтому в копии останется только `date` — и это уже строка `'1970-01-01T00:00:00.000Z'`, а не `Date`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Объект book" level="easy">
+  Создайте объект `book` со свойствами `title` (название), `author` (автор), `pages` (число страниц)
+  и `isRead` (прочитана ли книга). Затем:
+
+  1. Выведите в консоль название через **точку**.
+  2. Выведите автора через **квадратные скобки**.
+  3. Измените значение `pages`.
+  4. Добавьте новое свойство `genre` с жанром книги.
+
+  <Fragment slot="solution">
+    ```js
+    const book = {
+      title: 'Война и мир',
+      author: 'Лев Толстой',
+      pages: 1300,
+      isRead: false,
+    };
+
+    console.log(book.title);
+    console.log(book['author']);
+
+    book.pages = 1274;
+    book.genre = 'Роман-эпопея';
+    ```
+
+    Объявить объект через `const` и при этом менять и добавлять свойства — нормально:
+    `const` запрещает только переприсвоить саму переменную `book`.
+  </Fragment>
+</Task>
+
+<Task title="createUser: вычисляемые свойства" level="easy">
+  Напишите функцию `createUser(name, age, role)`, которая возвращает объект, где:
+
+  - ключи `name` и `age` совпадают с именами параметров;
+  - ключ для `role` вычисляемый — берётся из глобальной переменной `roleKey`, равной `'position'`;
+  - свойство `isAdult` равно `true`, если возраст не меньше 18, иначе `false`.
+
+  ```js
+  const roleKey = 'position';
+  const user = createUser('Alice', 25, 'Developer');
+  console.log(user);
+  // { name: 'Alice', age: 25, position: 'Developer', isAdult: true }
+  ```
+
+  <Fragment slot="hint">
+    Вычисляемый ключ пишется в квадратных скобках: `[roleKey]: role`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const roleKey = 'position';
+
+    const createUser = (name, age, role) => ({
+      name,
+      age,
+      [roleKey]: role,
+      isAdult: age >= 18,
+    });
+    ```
+
+    `name` и `age` — сокращённая запись `name: name`. Круглые скобки вокруг `{ … }` нужны,
+    чтобы стрелочная функция вернула объект, а не восприняла фигурные скобки как тело функции.
+    Если написать ключ строкой `position: role`, код заработает, но перестанет зависеть от `roleKey`.
+  </Fragment>
+</Task>
+
+<Task title="printProductInfo: перебор свойств" level="easy">
+  Дан объект:
+
+  ```js
+  const product = {
+    name: 'Ноутбук',
+    price: 1500,
+    brand: 'HP',
+    inStock: true,
+    discount: 10,
+  };
+  ```
+
+  Напишите функцию `printProductInfo(product)`, которая выводит все ключи, все значения
+  и возвращает количество свойств, посчитанное циклом `for...in`.
+
+  ```
+  Ключи: name, price, brand, inStock, discount
+  Значения: Ноутбук, 1500, HP, true, 10
+  Количество свойств: 5
+  ```
+
+  <Fragment slot="hint">
+    `Object.keys` и `Object.values` возвращают массивы, а `join(', ')` склеивает их через запятую с пробелом.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function printProductInfo(product) {
+      let count = 0;
+      for (const key in product) {
+        count++;
+      }
+
+      console.log(`Ключи: ${Object.keys(product).join(', ')}`);
+      console.log(`Значения: ${Object.values(product).join(', ')}`);
+      console.log(`Количество свойств: ${count}`);
+
+      return count;
+    }
+    ```
+
+    Обратите внимание на `join(', ')`: без аргумента `join()` склеивает через запятую **без пробела** — `name,price,…`.
+    На практике количество свойств обычно считают короче: `Object.keys(product).length`.
+  </Fragment>
+</Task>
+
+<Task title="hasProperty: проверка наличия" level="medium">
+  Напишите функцию `hasProperty(obj, prop)`, которая возвращает строку:
+
+  - `'Свойство отсутствует'` — если свойства нет в объекте;
+  - `'Свойство существует, но равно undefined'` — если свойство есть, но его значение `undefined`;
+  - `'Свойство существует и имеет значение: …'` — для любого другого значения, включая `null`, `0`, `false` и пустую строку.
+
+  ```js
+  const testObj = { a: 1, b: undefined, c: null, d: 0 };
+
+  hasProperty(testObj, 'a'); // 'Свойство существует и имеет значение: 1'
+  hasProperty(testObj, 'b'); // 'Свойство существует, но равно undefined'
+  hasProperty(testObj, 'c'); // 'Свойство существует и имеет значение: null'
+  hasProperty(testObj, 'd'); // 'Свойство существует и имеет значение: 0'
+  hasProperty(testObj, 'x'); // 'Свойство отсутствует'
+  ```
+
+  <Fragment slot="hint">
+    Сначала проверьте наличие свойства (`hasOwnProperty` или `Object.hasOwn`), а потом — строго сравните значение с `undefined`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function hasProperty(obj, prop) {
+      if (!Object.hasOwn(obj, prop)) {
+        return 'Свойство отсутствует';
+      }
+
+      const value = obj[prop];
+      if (value === undefined) {
+        return 'Свойство существует, но равно undefined';
+      }
+
+      return `Свойство существует и имеет значение: ${value}`;
+    }
+    ```
+
+    Порядок проверок важен: `obj[prop] === undefined` верно и для отсутствующего свойства, и для свойства со значением `undefined`,
+    поэтому сначала отделяем «нет свойства». Строгое `===` не путает `undefined` с `null`, `0` и `false`.
+    `Object.hasOwn` работает так же, как `obj.hasOwnProperty`, но не ломается на объектах без прототипа.
+  </Fragment>
+</Task>
+
+<Task title="mergeAndCount: слияние объектов" level="easy">
+  Напишите функцию `mergeAndCount(obj1, obj2)`, которая создаёт **новый** объект — копию `obj1` со свойствами из `obj2`
+  (при совпадении побеждает `obj2`) — и возвращает объект с полями `merged` (результат) и `totalKeys` (число ключей в нём).
+  Используйте spread.
+
+  ```js
+  const user = { name: 'Alex', age: 30, city: 'Moscow' };
+  const updates = { age: 31, country: 'Russia', city: 'SPb' };
+
+  mergeAndCount(user, updates);
+  // { merged: { name: 'Alex', age: 31, city: 'SPb', country: 'Russia' }, totalKeys: 4 }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function mergeAndCount(obj1, obj2) {
+      const merged = { ...obj1, ...obj2 };
+
+      return {
+        merged,
+        totalKeys: Object.keys(merged).length,
+      };
+    }
+    ```
+
+    При spread свойства копируются по порядку, поэтому одинаковые ключи из `obj2` перезаписывают значения из `obj1`.
+    Исходные объекты при этом не меняются. Ключи в объекте уникальны сами по себе, так что `Object.keys(merged).length` —
+    это и есть число уникальных ключей.
+  </Fragment>
+</Task>
+
+<Task title="extractUserData: деструктуризация" level="medium">
+  Напишите функцию `extractUserData`, которая с помощью **деструктуризации в параметрах** достаёт из пользователя
+  `name`, `age`, `city` (из вложенного `address`) и `firstHobby` (первый элемент `hobbies`) и возвращает новый объект с этими полями.
+
+  ```js
+  const user = {
+    id: 1,
+    name: 'Елена',
+    age: 28,
+    address: { city: 'Москва', street: 'Тверская', house: 10 },
+    hobbies: ['чтение', 'спорт', 'музыка'],
+  };
+
+  extractUserData(user);
+  // { name: 'Елена', age: 28, city: 'Москва', firstHobby: 'чтение' }
+  ```
+
+  <Fragment slot="hint">
+    Деструктурировать можно вложенно: `address: { city }` достаёт `city`, а `hobbies: [firstHobby]` — первый элемент массива.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function extractUserData({ name, age, address: { city }, hobbies: [firstHobby] }) {
+      return { name, age, city, firstHobby };
+    }
+    ```
+
+    Вариант попроще тоже верный — деструктурировать только первый уровень и обратиться к вложенным значениям в теле:
+
+    ```js
+    function extractUserData({ name, age, address, hobbies }) {
+      return { name, age, city: address.city, firstHobby: hobbies[0] };
+    }
+    ```
+
+    Если у пользователя может не быть `address`, вложенная деструктуризация упадёт с `TypeError` —
+    тогда нужно значение по умолчанию: `address: { city } = {}`.
+  </Fragment>
+</Task>
+
+<Task title="calculator: методы и история" level="medium">
+  Создайте объект `calculator` с методами `add(a, b)`, `subtract(a, b)`, `multiply(a, b)`, `divide(a, b)` и `reset()`
+  и массивом `history`.
+
+  - Каждый метод, кроме `reset`, возвращает результат и добавляет в `history` строку вида `'5 + 3 = 8'`.
+  - `divide` при `b === 0` возвращает строку `'Ошибка: деление на ноль'`.
+  - `reset()` очищает историю.
+
+  ```js
+  calculator.add(5, 3); // 8
+  calculator.multiply(2, 4); // 8
+  calculator.divide(10, 2); // 5
+  console.log(calculator.history); // ['5 + 3 = 8', '2 * 4 = 8', '10 / 2 = 5']
+
+  calculator.reset();
+  console.log(calculator.history); // []
+  ```
+
+  <Fragment slot="hint">
+    Вынесите запись в историю в отдельный метод, который принимает операнды, знак операции и результат,
+    и возвращает результат — тогда каждый метод уложится в одну строку.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const calculator = {
+      history: [],
+
+      record(a, sign, b, result) {
+        this.history.push(`${a} ${sign} ${b} = ${result}`);
+        return result;
+      },
+
+      add(a, b) {
+        return this.record(a, '+', b, a + b);
+      },
+
+      subtract(a, b) {
+        return this.record(a, '-', b, a - b);
+      },
+
+      multiply(a, b) {
+        return this.record(a, '*', b, a * b);
+      },
+
+      divide(a, b) {
+        const result = b === 0 ? 'Ошибка: деление на ноль' : a / b;
+        return this.record(a, '/', b, result);
+      },
+
+      reset() {
+        this.history = [];
+      },
+    };
+    ```
+
+    Проверка деления на ноль живёт только в `divide`. Если вынести её в общий метод записи, то `add(5, 0)`
+    или `multiply(5, 0)` тоже попадут в историю как «деление на ноль». Методы возвращают результат,
+    а не выводят его в консоль, — так ими можно пользоваться в другом коде.
+  </Fragment>
+</Task>
+
+<Task title="team: this в методах" level="medium">
+  Создайте объект `team` со свойствами `name` и `members` (массив объектов с полями `name` и `role`) и методами:
+
+  - `addMember(name, role)` — добавляет участника;
+  - `listMembers()` — возвращает строку `'Команда Разработчики: Анна (Frontend), Иван (Backend), …'`;
+  - `findByRole(role)` — возвращает **новый** массив имён участников с этой ролью.
+
+  Все методы должны работать через `this`.
+
+  ```js
+  team.addMember('Пётр', 'Frontend');
+
+  team.listMembers();
+  // 'Команда Разработчики: Анна (Frontend), Иван (Backend), Пётр (Frontend)'
+
+  team.findByRole('Frontend'); // ['Анна', 'Пётр']
+  ```
+
+  <Fragment slot="hint">
+    Для строки пригодятся `map` и `join(', ')`, для поиска — `filter` и `map`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const team = {
+      name: 'Разработчики',
+      members: [
+        { name: 'Анна', role: 'Frontend' },
+        { name: 'Иван', role: 'Backend' },
+      ],
+
+      addMember(name, role) {
+        this.members.push({ name, role });
+      },
+
+      listMembers() {
+        const list = this.members.map((member) => `${member.name} (${member.role})`).join(', ');
+        return `Команда ${this.name}: ${list}`;
+      },
+
+      findByRole(role) {
+        return this.members.filter((member) => member.role === role).map((member) => member.name);
+      },
+    };
+    ```
+
+    Методы объявлены сокращённой записью, поэтому `this` внутри них — это `team`. Стрелочные функции внутри
+    `map` и `filter` своего `this` не имеют и не мешают. А вот если сделать стрелкой сам метод
+    (`listMembers: () => …`), `this.members` перестанет работать.
+    `filter` и `map` возвращают новые массивы, так что исходный `members` не меняется.
+  </Fragment>
+</Task>

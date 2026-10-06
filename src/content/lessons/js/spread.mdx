@@ -1,0 +1,552 @@
+---
+title: Spread и rest
+description: Оператор ... — раскрытие массивов, строк и объектов, копирование и слияние, и сбор значений через rest
+section: js
+order: 11
+level: beginner
+tags: [spread, rest, arrays, objects]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+Три точки `...` в JavaScript работают в двух противоположных ролях:
+
+- **spread** («распаковка») — **раскрывает** массив, строку или объект на отдельные элементы;
+- **rest** («остаток») — наоборот, **собирает** несколько значений в один массив или объект.
+
+Что именно происходит, зависит от места: справа от `=` и в вызове функции — spread, слева от `=` и в параметрах — rest.
+
+## Spread в вызове функции
+
+Некоторые функции принимают значения через запятую, а не массивом. Например, `Math.max(3, 7, 2)`.
+Spread превращает массив в такой список аргументов:
+
+```js
+const numbers = [1, 2, 3, 4, 5];
+
+const maximum = Math.max(...numbers); // то же, что Math.max(1, 2, 3, 4, 5) → 5
+const minimum = Math.min(...numbers); // 1
+
+Math.max(numbers); // NaN — без spread передан один аргумент-массив, а не числа
+```
+
+Spread можно комбинировать с обычными аргументами и использовать несколько раз:
+
+```js
+const a = [1, 5];
+const b = [8, 3];
+
+Math.max(...a, 10, ...b); // 10
+```
+
+<Callout type="warning">
+  `Math.max(...[])` — это `-Infinity`, а `Math.min(...[])` — `Infinity`: для пустого массива сравнивать нечего.
+  Если массив может быть пустым, проверьте его длину заранее.
+</Callout>
+
+## Spread для строк
+
+Строку можно разложить на отдельные символы:
+
+```js
+const movieName = 'Восход';
+
+const letters = [...movieName]; // ['В', 'о', 'с', 'х', 'о', 'д']
+letters.join('.'); // 'В.о.с.х.о.д'
+```
+
+В отличие от `split('')`, spread правильно работает с эмодзи и другими символами, которые занимают в строке две позиции:
+
+```js
+'Привет👋'.split(''); // 8 элементов — эмодзи развалился на две непонятные половинки
+[...'Привет👋']; // 7 элементов — эмодзи остался целым
+```
+
+## Spread для массивов
+
+### Копия массива
+
+```js
+const fruits = ['Груша', 'Ананас', 'Банан'];
+const newFruits = [...fruits];
+
+newFruits.push('Манго');
+
+console.log(fruits); // ['Груша', 'Ананас', 'Банан'] — исходный не изменился
+console.log(newFruits); // ['Груша', 'Ананас', 'Банан', 'Манго']
+```
+
+Простое присваивание `const newFruits = fruits` копию **не создаёт** — обе переменные смотрели бы на один массив.
+Подробнее о ссылках — в уроке [Массивы](/learn/js/arrays).
+
+### Объединение массивов
+
+```js
+const vegetables = ['Кукуруза', 'Картофель', 'Морковь'];
+
+const foods = [...fruits, ...vegetables, 'Яйца', 'Огурцы'];
+// ['Груша', 'Ананас', 'Банан', 'Кукуруза', 'Картофель', 'Морковь', 'Яйца', 'Огурцы']
+
+foods.join(', '); // 'Груша, Ананас, Банан, Кукуруза, …'
+```
+
+<Callout type="tip">
+  В `join` передаётся разделитель, который встанет **между** элементами. `foods.join(' .')` даст
+  `'Груша .Ананас .Банан'` — точку перед словом. Обычно нужен `', '` или `' · '`.
+</Callout>
+
+### Добавление без изменения исходного массива
+
+Spread позволяет получить новый массив с добавленными элементами, не трогая старый. Это важно,
+например, в React, где состояние нельзя менять напрямую:
+
+```js
+const tasks = ['Купить хлеб', 'Позвонить маме'];
+
+const withNewLast = [...tasks, 'Сделать зарядку']; // в конец — вместо push
+const withNewFirst = ['Сделать зарядку', ...tasks]; // в начало — вместо unshift
+const withInserted = [...tasks.slice(0, 1), 'Ответить на письмо', ...tasks.slice(1)]; // в середину
+
+console.log(tasks); // ['Купить хлеб', 'Позвонить маме'] — без изменений
+```
+
+### Уникальные значения
+
+`Set` хранит только уникальные значения, а spread превращает его обратно в массив:
+
+```js
+const tags = ['js', 'css', 'js', 'html', 'css'];
+const uniqueTags = [...new Set(tags)]; // ['js', 'css', 'html']
+```
+
+## Spread для объектов
+
+Те же три точки работают и внутри фигурных скобок — копируют **свойства** одного объекта в другой.
+
+### Копия и слияние
+
+```js
+const user = { name: 'Аня', age: 25 };
+
+const copy = { ...user }; // { name: 'Аня', age: 25 } — новый объект
+
+const contacts = { email: 'anya@mail.ru', phone: '+7 900 000-00-00' };
+const profile = { ...user, ...contacts }; // все свойства обоих объектов
+```
+
+### Порядок важен
+
+Если у объектов есть одинаковые ключи, побеждает тот, что **правее**:
+
+```js
+const defaults = { theme: 'light', language: 'ru', fontSize: 16 };
+const userSettings = { theme: 'dark', fontSize: 18 };
+
+const settings = { ...defaults, ...userSettings };
+// { theme: 'dark', language: 'ru', fontSize: 18 } — пользовательские значения перезаписали стандартные
+```
+
+Это удобный способ задать **значения по умолчанию**: сначала стандартные, потом переданные.
+
+### Изменение свойства без изменения объекта
+
+```js
+const user = { name: 'Аня', age: 25, city: 'Москва' };
+
+const olderUser = { ...user, age: 26 }; // копия с новым возрастом
+const withRole = { ...user, role: 'admin' }; // копия с новым свойством
+
+console.log(user.age); // 25 — исходный объект не изменился
+```
+
+## Поверхностная копия
+
+Spread копирует только **первый уровень**. Если внутри массива или объекта лежат другие объекты или массивы,
+копируются ссылки на них — и изменения во вложенных данных видны в обеих копиях:
+
+```js
+const user = { name: 'Аня', address: { city: 'Москва' } };
+const copy = { ...user };
+
+copy.name = 'Оля'; // user.name не изменится
+copy.address.city = 'Казань'; // а user.address.city — изменится!
+
+console.log(user.address.city); // 'Казань'
+```
+
+Чтобы изменить вложенное значение без побочных эффектов, раскройте и вложенный объект:
+
+```js
+const moved = {
+  ...user,
+  address: { ...user.address, city: 'Казань' },
+};
+```
+
+А для полной глубокой копии есть `structuredClone(user)` — подробнее в уроке [Объекты](/learn/js/objects).
+
+## Что можно раскрывать
+
+| Где | Что можно | Что нельзя |
+|---|---|---|
+| В массиве `[...x]` и в вызове `f(...x)` | **перебираемое**: массивы, строки, `Set`, `Map` | обычные объекты, `null`, `undefined` — `TypeError` |
+| В объекте `{...x}` | объекты, массивы, строки | — (`null` и `undefined` просто игнорируются) |
+
+```js
+const user = { name: 'Аня' };
+
+[...user]; // TypeError: user is not iterable
+({ ...null }); // {} — ошибки нет
+({ ...['a', 'b'] }); // { 0: 'a', 1: 'b' } — индексы стали ключами
+```
+
+## Rest: собрать остаток
+
+Те же три точки **слева** от `=` или в параметрах функции работают наоборот — собирают «всё остальное».
+
+### В параметрах функции
+
+```js
+function sum(...numbers) {
+  return numbers.reduce((total, n) => total + n, 0);
+}
+
+sum(1, 2); // 3
+sum(1, 2, 3, 4); // 10
+
+function greet(greeting, ...names) {
+  return `${greeting}, ${names.join(' и ')}!`;
+}
+
+greet('Привет', 'Аня', 'Оля'); // 'Привет, Аня и Оля!'
+```
+
+Подробнее — в уроке [Rest-параметры](/learn/js/rest-parameters).
+
+### В деструктуризации массива
+
+```js
+const [first, second, ...others] = ['золото', 'серебро', 'бронза', '4 место', '5 место'];
+
+first; // 'золото'
+second; // 'серебро'
+others; // ['бронза', '4 место', '5 место']
+```
+
+### В деструктуризации объекта
+
+Rest в объекте собирает все свойства, которые не были извлечены отдельно. Так удобно **убрать** свойство из копии:
+
+```js
+const user = { id: 7, name: 'Аня', password: 'secret123', age: 25 };
+
+const { password, ...safeUser } = user;
+
+console.log(safeUser); // { id: 7, name: 'Аня', age: 25 } — без пароля
+```
+
+<Callout type="warning">
+  Rest всегда должен быть **последним**: собрать «остаток» можно только в конце.
+  `const [...rest, last] = arr` и `function f(...args, last)` — это `SyntaxError`.
+</Callout>
+
+## Spread или rest
+
+|  | Spread | Rest |
+|---|---|---|
+| Что делает | раскрывает одно значение на много | собирает много значений в одно |
+| Где стоит | в вызове функции, справа от `=`, в литералах `[…]` и `{…}` | в параметрах функции, слева от `=` при деструктуризации |
+| Пример | `Math.max(...numbers)`, `[...a, ...b]`, `{ ...user }` | `function f(...args)`, `const [a, ...rest] = arr` |
+
+Их часто используют вместе: rest собирает аргументы в массив, а spread передаёт их дальше:
+
+```js
+function logWithTime(...messages) {
+  console.log(new Date().toLocaleTimeString(), ...messages);
+}
+
+logWithTime('Пользователь', 'вошёл в систему'); // '12:30:00 Пользователь вошёл в систему'
+```
+
+## Проверь себя
+
+<Quiz client:visible id="js/spread/max-without-spread" options={['5', 'NaN', '[1, 2, 3, 4, 5]', 'undefined']} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  const numbers = [1, 2, 3, 4, 5];
+  Math.max(numbers);
+  ```
+
+  <Fragment slot="explanation">
+    Без spread в `Math.max` передаётся **один** аргумент — сам массив. Он превращается в строку `'1,2,3,4,5'`,
+    которая не является числом, — получается `NaN`. Правильно: `Math.max(...numbers)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/spread/max-empty" options={['0', 'undefined', '-Infinity', 'NaN']} answer={2}>
+  Что вернёт выражение?
+
+  ```js
+  Math.max(...[]);
+  ```
+
+  <Fragment slot="explanation">
+    Spread пустого массива — это вызов `Math.max()` без аргументов. Он возвращает `-Infinity`:
+    любое число больше него, так что это «нейтральная» стартовая точка для поиска максимума.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/spread/string-length" options={['1', '5', '6', 'TypeError']} answer={2}>
+  Чему равна длина массива?
+
+  ```js
+  [...'Привет'].length;
+  ```
+
+  <Fragment slot="explanation">
+    Spread раскладывает строку на отдельные символы: `['П', 'р', 'и', 'в', 'е', 'т']` — шесть элементов.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/spread/merge-order"
+  options={["{ theme: 'light', size: 16 }", "{ theme: 'dark', size: 16 }", "{ theme: 'dark' }", "{ theme: 'light', size: 16, theme: 'dark' }"]}
+  answer={0}
+>
+  Что получится?
+
+  ```js
+  const defaults = { theme: 'light', size: 16 };
+  const custom = { theme: 'dark' };
+
+  const result = { ...custom, ...defaults };
+  ```
+
+  <Fragment slot="explanation">
+    При совпадении ключей побеждает объект, раскрытый **последним**. Здесь последний — `defaults`,
+    поэтому он перезаписал `theme: 'dark'`. Чтобы пользовательские настройки имели приоритет, порядок должен быть обратным:
+    `{ ...defaults, ...custom }`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/spread/shallow-nested" options={['[1]', '[1, 9]', '[9]', 'undefined']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const a = [[1], [2]];
+  const b = [...a];
+
+  b[0].push(9);
+  console.log(a[0]);
+  ```
+
+  <Fragment slot="explanation">
+    Spread создал новый внешний массив, но внутренние массивы не скопировал: `b[0]` и `a[0]` — одна и та же ссылка.
+    Поэтому `push` во вложенный массив виден через обе переменные.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/spread/object-not-iterable" options={['[1]', "['a']", '[]', 'TypeError']} answer={3}>
+  Что произойдёт?
+
+  ```js
+  const arr = [...{ a: 1 }];
+  ```
+
+  <Fragment slot="explanation">
+    В массив можно раскрыть только **перебираемое** значение: массив, строку, `Set`, `Map`. Обычный объект не перебираемый —
+    будет `TypeError: … is not iterable`. Чтобы получить значения или ключи, используйте `Object.values` или `Object.keys`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/spread/object-rest" options={['{ a: 1 }', '{ b: 2, c: 3 }', '{ a: 1, b: 2, c: 3 }', '[2, 3]']} answer={1}>
+  Чему равно `others`?
+
+  ```js
+  const { a, ...others } = { a: 1, b: 2, c: 3 };
+  ```
+
+  <Fragment slot="explanation">
+    `a` извлечено отдельно, а rest `...others` собрал в **новый объект** все оставшиеся свойства — `b` и `c`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/spread/rest-last" options={['last = 3, rest = [1, 2]', 'last = 1, rest = [2, 3]', 'SyntaxError', 'undefined']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  const [...rest, last] = [1, 2, 3];
+  ```
+
+  <Fragment slot="explanation">
+    Rest должен стоять **последним** — он забирает всё, что осталось, и после него ничего быть не может.
+    Это `SyntaxError`. Последний элемент достают по-другому: `arr.at(-1)`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Максимум, минимум и размах" level="easy">
+  Напишите функцию `range(numbers)`, которая возвращает объект с максимумом, минимумом и их разностью.
+  Используйте spread. Для пустого массива верните `null`.
+
+  ```js
+  range([3, 9, 1, 7]); // { max: 9, min: 1, diff: 8 }
+  range([]); // null
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function range(numbers) {
+      if (numbers.length === 0) return null;
+
+      const max = Math.max(...numbers);
+      const min = Math.min(...numbers);
+
+      return { max, min, diff: max - min };
+    }
+    ```
+
+    Без проверки на пустой массив получилось бы `{ max: -Infinity, min: Infinity, diff: -Infinity }`.
+  </Fragment>
+</Task>
+
+<Task title="Вставка по индексу" level="easy">
+  Напишите функцию `insertAt(arr, index, item)`, которая возвращает **новый** массив с элементом на позиции `index`.
+  Исходный массив меняться не должен.
+
+  ```js
+  const letters = ['a', 'b', 'd'];
+
+  insertAt(letters, 2, 'c'); // ['a', 'b', 'c', 'd']
+  insertAt(letters, 0, 'z'); // ['z', 'a', 'b', 'd']
+  console.log(letters); // ['a', 'b', 'd']
+  ```
+
+  <Fragment slot="hint">
+    `slice` вернёт части до и после позиции, а spread соберёт их вместе с новым элементом.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const insertAt = (arr, index, item) => [...arr.slice(0, index), item, ...arr.slice(index)];
+    ```
+
+    `slice` не меняет исходный массив, и spread тоже — поэтому `letters` остаётся прежним.
+    В современных браузерах есть и готовый метод: `arr.toSpliced(index, 0, item)`.
+  </Fragment>
+</Task>
+
+<Task title="Настройки по умолчанию" level="easy">
+  Напишите функцию `createConfig(options)`, которая возвращает настройки: значения из `options` перекрывают стандартные
+  `{ theme: 'light', language: 'ru', notifications: true }`. Вызов без аргумента должен вернуть стандартные настройки.
+
+  ```js
+  createConfig({ theme: 'dark' }); // { theme: 'dark', language: 'ru', notifications: true }
+  createConfig(); // { theme: 'light', language: 'ru', notifications: true }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const DEFAULT_CONFIG = { theme: 'light', language: 'ru', notifications: true };
+
+    function createConfig(options = {}) {
+      return { ...DEFAULT_CONFIG, ...options };
+    }
+    ```
+
+    Стандартные настройки раскрываются первыми, пользовательские — вторыми и перезаписывают совпадающие ключи.
+    `options = {}` не обязателен — `{ ...undefined }` не бросает ошибку, — но явно показывает, что аргумент можно не передавать.
+    Каждый вызов возвращает новый объект, поэтому изменение результата не испортит `DEFAULT_CONFIG`.
+  </Fragment>
+</Task>
+
+<Task title="Переезд пользователя" level="medium">
+  Напишите функцию `moveUser(user, city)`, которая возвращает **новый** объект пользователя с изменённым городом.
+  Исходный объект, включая вложенный `address`, меняться не должен.
+
+  ```js
+  const user = { name: 'Аня', address: { city: 'Москва', street: 'Тверская' } };
+
+  const moved = moveUser(user, 'Казань');
+  // { name: 'Аня', address: { city: 'Казань', street: 'Тверская' } }
+
+  console.log(user.address.city); // 'Москва'
+  ```
+
+  <Fragment slot="hint">
+    Одного `{ ...user }` мало: `address` останется общей ссылкой. Раскройте и вложенный объект.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const moveUser = (user, city) => ({
+      ...user,
+      address: { ...user.address, city },
+    });
+    ```
+
+    Если написать `const copy = { ...user }; copy.address.city = city;`, изменится и исходный `user` —
+    поверхностная копия делит вложенный `address`. Здесь создаётся новый `address`: старая улица копируется,
+    а город перезаписывается.
+  </Fragment>
+</Task>
+
+<Task title="Убрать поле" level="medium">
+  Напишите функцию `omit(obj, key)`, которая возвращает копию объекта без указанного свойства.
+
+  ```js
+  const user = { id: 1, name: 'Аня', password: '123' };
+
+  omit(user, 'password'); // { id: 1, name: 'Аня' }
+  omit(user, 'id'); // { name: 'Аня', password: '123' }
+  console.log(user); // { id: 1, name: 'Аня', password: '123' }
+  ```
+
+  <Fragment slot="hint">
+    Rest в деструктуризации объекта собирает всё, кроме извлечённых свойств. Ключ из переменной извлекается
+    через вычисляемое имя в квадратных скобках.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function omit(obj, key) {
+      const { [key]: _removed, ...rest } = obj;
+      return rest;
+    }
+    ```
+
+    `[key]: _removed` извлекает свойство с именем из переменной `key` в переменную `_removed`, а `...rest` собирает
+    всё остальное. Подчёркивание в имени — соглашение: переменная нужна только для того, чтобы убрать свойство.
+    `delete obj[key]` изменил бы исходный объект.
+  </Fragment>
+</Task>
+
+<Task title="Объединение без повторов" level="medium">
+  Напишите функцию `mergeUnique(...arrays)`, которая принимает **любое количество** массивов и возвращает один массив
+  с уникальными значениями в порядке первого появления.
+
+  ```js
+  mergeUnique([1, 2], [2, 3], [3, 4, 1]); // [1, 2, 3, 4]
+  mergeUnique(['js'], ['css', 'js']); // ['js', 'css']
+  mergeUnique(); // []
+  ```
+
+  <Fragment slot="hint">
+    Rest соберёт массивы в массив массивов. `flat()` сделает из него один плоский массив, а `Set` уберёт повторы.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const mergeUnique = (...arrays) => [...new Set(arrays.flat())];
+    ```
+
+    Здесь работают оба вида `...`: rest в параметрах собирает аргументы в массив `arrays`,
+    а spread раскрывает `Set` обратно в массив. `Set` сохраняет порядок добавления, поэтому значения идут
+    в порядке первого появления. Без `flat`: `[...new Set([].concat(...arrays))]`.
+  </Fragment>
+</Task>

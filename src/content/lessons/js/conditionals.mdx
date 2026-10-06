@@ -1,0 +1,664 @@
+---
+title: Условия
+description: if/else, операторы сравнения и логические операторы, тернарный оператор, switch и ??
+section: js
+order: 5
+level: beginner
+tags: [if, switch, operators]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+Условия позволяют выполнять разный код в зависимости от данных: показать кнопку только авторизованному пользователю,
+дать скидку по промокоду, вывести ошибку при неверном вводе.
+
+## if, else if, else
+
+`if` выполняет блок кода, если условие в скобках истинно. `else` — если ложно.
+
+```js
+const isStudent = false;
+
+if (isStudent) {
+  console.log('Вы студент');
+} else {
+  console.log('Вы не студент');
+}
+// 'Вы не студент'
+```
+
+Когда вариантов больше двух, добавляют `else if`. Условия проверяются **сверху вниз**, и выполняется только
+**первая** подходящая ветка — остальные пропускаются.
+
+```js
+const age = 7;
+
+if (age <= 0) {
+  console.log('Ты ещё не родился');
+} else if (age >= 18) {
+  console.log('Ты совершеннолетний');
+} else {
+  console.log('Ты несовершеннолетний');
+}
+// 'Ты несовершеннолетний'
+```
+
+```js
+const score = 100;
+
+if (score >= 90) {
+  console.log('Отлично');
+} else if (score >= 60) {
+  console.log('Нормально');
+} else {
+  console.log('Попробуй ещё раз');
+}
+// 'Отлично' — хотя 100 >= 60 тоже верно, до этой ветки дело не дошло
+```
+
+<Callout type="warning">
+  Порядок веток важен. Если поставить `score >= 60` первым, то для `100` выведется «Нормально»: условие подошло,
+  а более точную проверку `score >= 90` движок уже не посмотрит. Идите от самого строгого условия к самому общему.
+</Callout>
+
+### Фигурные скобки
+
+Если в ветке одна команда, скобки можно опустить: `if (age <= 0) console.log('…');`. Но лучше ставить их всегда:
+без скобок легко добавить вторую строку и не заметить, что она выполняется уже вне условия.
+
+```js
+if (isAdmin)
+  console.log('Доступ открыт');
+  deleteAllUsers(); // выполнится ВСЕГДА — к if относится только первая строка
+```
+
+## Операторы сравнения
+
+| Оператор | Значение | Пример |
+|---|---|---|
+| `>` / `<` | больше / меньше | `5 > 3` → `true` |
+| `>=` / `<=` | больше или равно / меньше или равно | `18 >= 18` → `true` |
+| `===` | строго равно | `5 === 5` → `true` |
+| `!==` | строго не равно | `5 !== '5'` → `true` |
+| `==` | равно с приведением типов | `5 == '5'` → `true` |
+| `!=` | не равно с приведением типов | `5 != '5'` → `false` |
+
+### === или ==
+
+`===` сравнивает и значение, и тип. `==` сначала пытается привести значения к одному типу — и даёт неочевидные результаты:
+
+```js
+5 === '5'; // false — разные типы
+5 == '5'; // true — строка превратилась в число
+
+0 == ''; // true
+0 == false; // true
+'' == false; // true
+null == undefined; // true
+null == 0; // false
+```
+
+Правило простое: **всегда используйте `===` и `!==`**. Единственное исключение, которое иногда встречается, —
+`value == null`: оно истинно и для `null`, и для `undefined`.
+
+Строки сравниваются посимвольно, по алфавиту — но с подвохом для чисел в виде строк:
+
+```js
+'apple' < 'banana'; // true
+'Б' < 'а'; // true — заглавные буквы «меньше» строчных
+'10' < '9'; // true — сравнение строк, '1' меньше '9'
+10 < 9; // false — сравнение чисел
+```
+
+## Логические операторы
+
+| Оператор | Название | Истинно, когда |
+|---|---|---|
+| `&&` | И | истинны **оба** условия |
+| <code>&#124;&#124;</code> | ИЛИ | истинно **хотя бы одно** |
+| `!` | НЕ | условие ложно |
+
+```js
+const age = 25;
+const hasTicket = true;
+const isVip = false;
+
+if (age >= 18 && hasTicket) {
+  console.log('Проходите'); // оба условия истинны
+}
+
+if (hasTicket || isVip) {
+  console.log('Есть доступ'); // достаточно одного
+}
+
+if (!isVip) {
+  console.log('Обычная очередь'); // !false → true
+}
+```
+
+Приоритет: сначала `!`, потом `&&`, потом `||`. При сомнениях — скобки:
+`isAdmin || (isEditor && isOwner)`.
+
+### Вместо вложенных if
+
+Вложенные условия быстро становятся «лесенкой», которую трудно читать:
+
+```js
+const yourAge = 18;
+const hasLicense = true;
+
+if (yourAge >= 18) {
+  if (hasLicense) {
+    console.log('Можно водить машину');
+  } else {
+    console.log('Нужно получить права');
+  }
+} else {
+  console.log('Ещё рано садиться за руль');
+}
+```
+
+Ту же логику можно записать плоско — сначала отсечь особые случаи, а потом обработать основной:
+
+```js
+if (yourAge < 18) {
+  console.log('Ещё рано садиться за руль');
+} else if (!hasLicense) {
+  console.log('Нужно получить права');
+} else {
+  console.log('Можно водить машину');
+}
+```
+
+А в функции — через **ранний возврат** (guard clauses): каждая проверка сразу выходит из функции,
+и основной код остаётся без отступов.
+
+```js
+function getDriveStatus(age, hasLicense) {
+  if (age < 18) return 'Ещё рано садиться за руль';
+  if (!hasLicense) return 'Нужно получить права';
+
+  return 'Можно водить машину';
+}
+```
+
+### Короткое замыкание
+
+`&&` и `||` возвращают не обязательно `true` или `false`, а **одно из значений**, и вычисляют правую часть,
+только если без неё результат неясен:
+
+- `a || b` — возвращает `a`, если оно истинно, иначе `b`;
+- `a && b` — возвращает `a`, если оно ложно, иначе `b`.
+
+```js
+'Аня' || 'Гость'; // 'Аня'
+'' || 'Гость'; // 'Гость'
+
+user && user.name; // если user нет — вернётся сам user (undefined), до user.name дело не дойдёт
+isLoggedIn && showMenu(); // showMenu вызовется, только если isLoggedIn истинно
+```
+
+## Тернарный оператор
+
+`условие ? значение1 : значение2` — короткая запись `if/else`, которая **возвращает значение**.
+Удобна, когда нужно выбрать одно из двух значений:
+
+```js
+const age = 20;
+const status = age >= 18 ? 'взрослый' : 'ребёнок'; // 'взрослый'
+
+console.log(`Товаров в корзине: ${count > 0 ? count : 'пока нет'}`);
+```
+
+Тернарные операторы можно вкладывать друг в друга, но читать такое тяжело:
+
+```js
+const message = {
+  tooYoung: 'Ещё рано садиться за руль',
+  noLicense: 'Нужно получить права',
+  canDrive: 'Можно водить машину',
+};
+
+console.log(yourAge < 18 ? message.tooYoung : hasLicense ? message.canDrive : message.noLicense);
+```
+
+Если вложенный тернарный всё же нужен, разбейте его на строки — так видна структура:
+
+```js
+const text =
+  yourAge < 18 ? message.tooYoung
+  : !hasLicense ? message.noLicense
+  : message.canDrive;
+```
+
+Но чаще понятнее функция с ранними возвратами из раздела выше.
+
+<Callout type="tip">
+  Тернарный оператор — для выбора **значения**. Если в ветках нужно выполнить действия (вызвать функции, изменить переменные),
+  используйте обычный `if`.
+</Callout>
+
+## switch
+
+`switch` сравнивает одно значение с несколькими вариантами через `===`. Удобен, когда вариантов много
+и все они — конкретные значения:
+
+```js
+const role = 'editor';
+
+switch (role) {
+  case 'admin':
+    console.log('Полный доступ');
+    break;
+  case 'editor':
+    console.log('Можно редактировать');
+    break;
+  case 'viewer':
+    console.log('Только просмотр');
+    break;
+  default:
+    console.log('Неизвестная роль');
+}
+// 'Можно редактировать'
+```
+
+`break` обязателен: без него выполнение «проваливается» в следующий `case`, даже если он не совпадает.
+Иногда это используют специально, чтобы объединить варианты:
+
+```js
+const day = 'сб';
+
+switch (day) {
+  case 'сб':
+  case 'вс':
+    console.log('Выходной');
+    break;
+  default:
+    console.log('Будний день');
+}
+```
+
+## Объект вместо условий
+
+Если условие просто выбирает **значение по ключу**, вместо `switch` или цепочки `if` удобно использовать объект:
+
+```js
+const roleLabels = {
+  admin: 'Полный доступ',
+  editor: 'Можно редактировать',
+  viewer: 'Только просмотр',
+};
+
+function getRoleLabel(role) {
+  return roleLabels[role] ?? 'Неизвестная роль';
+}
+
+getRoleLabel('editor'); // 'Можно редактировать'
+getRoleLabel('guest'); // 'Неизвестная роль'
+```
+
+Варианты хранятся как данные — их легко дополнить, не трогая логику.
+
+## Операторы ?? и ?.
+
+**`??` (nullish coalescing)** возвращает правую часть, только если левая — `null` или `undefined`.
+В отличие от `||`, он не считает «пустыми» `0`, `''` и `false`:
+
+```js
+const count = 0;
+
+count || 10; // 10 — 0 ложный, || его отбросил
+count ?? 10; // 0 — 0 не null и не undefined, значение сохранилось
+
+const userName = null;
+userName ?? 'Гость'; // 'Гость'
+```
+
+Используйте `??` для значений по умолчанию, когда `0`, `''` или `false` — нормальные значения.
+
+**`?.` (optional chaining)** обращается к свойству, только если слева не `null` и не `undefined`,
+иначе сразу возвращает `undefined` — вместо ошибки:
+
+```js
+const user = { name: 'Аня' };
+
+user.address.city; // TypeError: Cannot read properties of undefined
+user.address?.city; // undefined
+user.address?.city ?? 'Город не указан'; // 'Город не указан'
+```
+
+## Проверь себя
+
+<Quiz client:visible id="js/conditionals/branch-order" options={["'Отлично'", "'Нормально'", "'Отлично', затем 'Нормально'", "'Попробуй ещё раз'"]} answer={1}>
+  Что выведет код?
+
+  ```js
+  const score = 95;
+
+  if (score >= 60) {
+    console.log('Нормально');
+  } else if (score >= 90) {
+    console.log('Отлично');
+  } else {
+    console.log('Попробуй ещё раз');
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Выполняется только **первая** подходящая ветка. `95 >= 60` — истина, поэтому выводится «Нормально»,
+    и до проверки `score >= 90` дело не доходит. Строгие условия нужно проверять раньше общих.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/conditionals/loose-equality" options={['true true', 'true false', 'false true', 'false false']} answer={1}>
+  Что выведет код?
+
+  ```js
+  console.log(5 == '5', 5 === '5');
+  ```
+
+  <Fragment slot="explanation">
+    `==` приводит строку `'5'` к числу и сравнивает `5` с `5` — `true`. `===` сравнивает ещё и типы: число и строка — `false`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/conditionals/string-compare" options={['true', 'false']} answer={0}>
+  Что вернёт выражение?
+
+  ```js
+  '10' < '9';
+  ```
+
+  <Fragment slot="explanation">
+    Обе стороны — строки, поэтому сравнение идёт посимвольно: первый символ `'1'` меньше `'9'`, и результат — `true`.
+    Чтобы сравнить как числа, приведите их: `Number('10') < Number('9')` — `false`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/conditionals/and-returns" options={['true', 'false', '0', "'b'"]} answer={2}>
+  Что выведет код?
+
+  ```js
+  console.log('a' && 0 && 'b');
+  ```
+
+  <Fragment slot="explanation">
+    `&&` идёт слева направо и возвращает **первое ложное** значение, а если ложных нет — последнее.
+    `'a'` истинно, `0` ложно — на нём вычисление останавливается, результат — `0`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/conditionals/nullish" options={['0 0', '10 10', '10 0', '0 10']} answer={2}>
+  Что выведет код?
+
+  ```js
+  const count = 0;
+  console.log(count || 10, count ?? 10);
+  ```
+
+  <Fragment slot="explanation">
+    `||` отбрасывает любое ложное значение, в том числе `0`, — получается `10`.
+    `??` подставляет правую часть только для `null` и `undefined`, а `0` оставляет как есть.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/conditionals/switch-fallthrough" options={["'один'", "'один', затем 'два'", "'один', 'два', 'другое'", "'другое'"]} answer={1}>
+  Что выведет код?
+
+  ```js
+  const x = 1;
+
+  switch (x) {
+    case 1:
+      console.log('один');
+    case 2:
+      console.log('два');
+      break;
+    default:
+      console.log('другое');
+  }
+  ```
+
+  <Fragment slot="explanation">
+    В `case 1` нет `break`, поэтому после «один» выполнение проваливается в `case 2` и выводит «два».
+    Там стоит `break` — и до `default` дело не доходит.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/conditionals/nested-ternary"
+  options={["'Ещё рано'", "'Нужны права'", "'Можно водить'", 'undefined']}
+  answer={1}
+>
+  Что выведет код?
+
+  ```js
+  const age = 20;
+  const hasLicense = false;
+
+  console.log(age < 18 ? 'Ещё рано' : hasLicense ? 'Можно водить' : 'Нужны права');
+  ```
+
+  <Fragment slot="explanation">
+    Сначала проверяется `age < 18` — ложно, поэтому вычисляется вторая часть: `hasLicense ? 'Можно водить' : 'Нужны права'`.
+    `hasLicense` — `false`, значит, результат — «Нужны права».
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/conditionals/assignment-in-if" options={["'ноль'", "'не ноль'", 'SyntaxError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  let x = 0;
+
+  if (x = 5) {
+    console.log('не ноль');
+  } else {
+    console.log('ноль');
+  }
+  ```
+
+  <Fragment slot="explanation">
+    `x = 5` — это не сравнение, а **присваивание**. Оно возвращает присвоенное значение `5`, которое истинно,
+    поэтому всегда выполняется первая ветка, а `x` становится `5`. Для сравнения нужно `===`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Оценка по баллам" level="easy">
+  Напишите функцию `getGrade(score)`, которая по баллам от 0 до 100 возвращает оценку:
+  `90` и выше — `'отлично'`, от `75` — `'хорошо'`, от `60` — `'удовлетворительно'`, ниже — `'неудовлетворительно'`.
+  Если баллы вне диапазона 0–100, верните `'некорректные баллы'`.
+
+  ```js
+  getGrade(95); // 'отлично'
+  getGrade(75); // 'хорошо'
+  getGrade(40); // 'неудовлетворительно'
+  getGrade(120); // 'некорректные баллы'
+  ```
+
+  <Fragment slot="hint">
+    Сначала отсеките некорректные значения, потом идите от самой высокой оценки к самой низкой.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function getGrade(score) {
+      if (score < 0 || score > 100) return 'некорректные баллы';
+      if (score >= 90) return 'отлично';
+      if (score >= 75) return 'хорошо';
+      if (score >= 60) return 'удовлетворительно';
+      return 'неудовлетворительно';
+    }
+    ```
+
+    Благодаря ранним возвратам `else` не нужен: если условие сработало, функция уже вышла.
+    Проверка диапазона идёт первой — иначе `120` попало бы в «отлично».
+  </Fragment>
+</Task>
+
+<Task title="Уберите вложенность" level="easy">
+  Перепишите функцию без вложенных `if`, сохранив поведение.
+
+  ```js
+  function canEnter(age, hasTicket, isBanned) {
+    if (!isBanned) {
+      if (age >= 18) {
+        if (hasTicket) {
+          return 'Проходите';
+        } else {
+          return 'Купите билет';
+        }
+      } else {
+        return 'Вход с 18 лет';
+      }
+    } else {
+      return 'Вход запрещён';
+    }
+  }
+  ```
+
+  <Fragment slot="hint">
+    Переверните каждое условие и сразу возвращайте результат для «плохого» случая.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function canEnter(age, hasTicket, isBanned) {
+      if (isBanned) return 'Вход запрещён';
+      if (age < 18) return 'Вход с 18 лет';
+      if (!hasTicket) return 'Купите билет';
+
+      return 'Проходите';
+    }
+    ```
+
+    Каждая проверка отсекает один случай, и в конце остаётся только «успешный» путь. Порядок проверок тот же,
+    что и в исходной вложенности, поэтому поведение не изменилось.
+  </Fragment>
+</Task>
+
+<Task title="Цена билета" level="medium">
+  Напишите функцию `getTicketPrice(age, basePrice)`: дети до 7 лет проходят бесплатно, до 18 лет — скидка 50%,
+  от 65 лет — скидка 30%, остальные платят полную цену.
+
+  ```js
+  getTicketPrice(5, 1000); // 0
+  getTicketPrice(12, 1000); // 500
+  getTicketPrice(30, 1000); // 1000
+  getTicketPrice(70, 1000); // 700
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function getTicketPrice(age, basePrice) {
+      if (age < 7) return 0;
+      if (age < 18) return basePrice * 0.5;
+      if (age >= 65) return basePrice * 0.7;
+      return basePrice;
+    }
+    ```
+
+    Скидка 30% — это `basePrice * 0.7`, то есть 70% от цены. Для `age < 18` не нужно писать `age >= 7 && age < 18`:
+    дети до 7 лет уже вышли из функции на первой проверке.
+  </Fragment>
+</Task>
+
+<Task title="Будний или выходной" level="easy">
+  Напишите функцию `getDayType(day)`, которая по номеру дня недели (1 — понедельник, 7 — воскресенье)
+  возвращает `'будний'` или `'выходной'`, а для других чисел — `'нет такого дня'`. Используйте `switch`.
+
+  <Fragment slot="hint">
+    Несколько `case` подряд без кода между ними выполняют один и тот же блок.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function getDayType(day) {
+      switch (day) {
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+          return 'будний';
+        case 6:
+        case 7:
+          return 'выходной';
+        default:
+          return 'нет такого дня';
+      }
+    }
+    ```
+
+    `return` сразу выходит из функции, поэтому `break` здесь не нужен.
+    `switch` сравнивает через `===`, так что `getDayType('6')` вернёт `'нет такого дня'` — строка не равна числу.
+  </Fragment>
+</Task>
+
+<Task title="Високосный год" level="medium">
+  Напишите функцию `isLeapYear(year)`. Год високосный, если он делится на 4, но не делится на 100 —
+  **или** если он делится на 400.
+
+  ```js
+  isLeapYear(2024); // true — делится на 4
+  isLeapYear(2023); // false
+  isLeapYear(1900); // false — делится на 100, но не на 400
+  isLeapYear(2000); // true — делится на 400
+  ```
+
+  <Fragment slot="hint">
+    «Делится на 4» — это `year % 4 === 0`. Соберите правило из `&&`, `||` и скобок.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function isLeapYear(year) {
+      return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    }
+    ```
+
+    Выражение уже даёт `true` или `false`, поэтому `if` не нужен: писать
+    `if (условие) return true; else return false;` — лишнее.
+  </Fragment>
+</Task>
+
+<Task title="switch → объект" level="medium">
+  Перепишите функцию через объект, без `switch`.
+
+  ```js
+  function getStatusText(status) {
+    switch (status) {
+      case 'pending':
+        return 'Ожидает оплаты';
+      case 'paid':
+        return 'Оплачен';
+      case 'shipped':
+        return 'Отправлен';
+      default:
+        return 'Неизвестный статус';
+    }
+  }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const statusTexts = {
+      pending: 'Ожидает оплаты',
+      paid: 'Оплачен',
+      shipped: 'Отправлен',
+    };
+
+    function getStatusText(status) {
+      return statusTexts[status] ?? 'Неизвестный статус';
+    }
+    ```
+
+    Объект вынесен за пределы функции, чтобы не создаваться заново при каждом вызове.
+    `??` подставляет текст по умолчанию, когда ключа нет и `statusTexts[status]` равно `undefined`.
+  </Fragment>
+</Task>

@@ -1,0 +1,797 @@
+---
+title: Функции
+description: Объявление, выражения и стрелочные функции, параметры и return, ошибки, чистые функции и колбэки
+section: js
+order: 8
+level: beginner
+tags: [functions, arrow-functions, parameters]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Функция** — это именованный блок кода, который можно вызывать много раз. Функции избавляют от повторения кода,
+дают действиям понятные имена и разбивают программу на небольшие части, которые легко проверить по отдельности.
+
+## Объявление и вызов
+
+```js
+function greet(name) {
+  return `Привет, ${name}!`;
+}
+
+greet('Andrey'); // 'Привет, Andrey!'
+greet('Анна'); // 'Привет, Анна!'
+```
+
+- `function` — ключевое слово, `greet` — имя функции;
+- `name` в скобках — **параметр**: переменная, которая получит значение при вызове;
+- тело в фигурных скобках выполняется при каждом **вызове** — `greet('Andrey')`.
+
+<Callout type="warning">
+  Без скобок функция не вызывается. `console.log(greet)` выведет саму функцию, а не результат —
+  чтобы её выполнить, нужно `greet('Andrey')`.
+</Callout>
+
+## return
+
+`return` возвращает значение из функции и **сразу завершает** её — код после `return` не выполняется.
+
+```js
+function isEven(num) {
+  return num % 2 === 0;
+}
+
+const result = isEven(4); // true — результат можно сохранить в переменную
+console.log(isEven(7)); // false — или сразу использовать
+```
+
+Если `return` нет или он без значения, функция возвращает `undefined`:
+
+```js
+function logMessage(text) {
+  console.log(text);
+}
+
+const value = logMessage('Привет'); // выведет 'Привет'
+console.log(value); // undefined — функция ничего не вернула
+```
+
+**Вернуть результат** и **вывести в консоль** — разные вещи. Функция, которая возвращает значение, полезнее:
+её результат можно передать дальше, сохранить, проверить в тесте. Выводить в консоль лучше там, где функцию вызывают.
+
+### Ранний возврат
+
+`return` в середине функции позволяет отсечь особые случаи и не вкладывать условия друг в друга:
+
+```js
+function getDiscount(total, isMember) {
+  if (total <= 0) return 0;
+  if (isMember) return total * 0.1;
+  return total > 5000 ? total * 0.05 : 0;
+}
+```
+
+## Три способа создать функцию
+
+### Объявление функции (function declaration)
+
+```js
+function greet(name) {
+  return `Привет, ${name}!`;
+}
+```
+
+### Функциональное выражение (function expression)
+
+Функция создаётся как значение и сохраняется в переменную:
+
+```js
+const greet = function (name) {
+  return `Привет, ${name}!`;
+};
+```
+
+### Стрелочная функция (arrow function)
+
+Короткая запись функционального выражения:
+
+```js
+const greet = (name) => {
+  return `Привет, ${name}!`;
+};
+```
+
+Если тело — одно выражение, фигурные скобки и `return` можно опустить: значение вернётся автоматически.
+
+```js
+const greet = (name) => `Привет, ${name}!`;
+const double = (n) => n * 2;
+const sum = (a, b) => a + b;
+const getRandom = () => Math.random(); // без параметров — пустые скобки
+```
+
+<Callout type="warning">
+  Чтобы стрелочная функция в короткой записи вернула **объект**, оберните его в круглые скобки:
+  `const createUser = (name) => ({ name, role: 'user' });`. Без скобок фигурные скобки считаются телом функции,
+  и она вернёт `undefined`.
+</Callout>
+
+### Чем они отличаются
+
+|  | Объявление | Выражение | Стрелочная |
+|---|---|---|---|
+| Можно вызвать до объявления | да — поднимается целиком | нет | нет |
+| Короткая запись с неявным `return` | нет | нет | да |
+| Свой `this` | есть | есть | нет — берёт снаружи |
+
+На практике: **объявления** — для обычных именованных функций, **стрелочные** — для коротких функций,
+которые передают в другие функции (`numbers.map((n) => n * 2)`), а также внутри методов, когда нужен внешний `this`.
+Не делайте стрелочными методы объектов — подробнее в уроке [Объекты](/learn/js/objects).
+Про поднятие функций — в уроке [Переменные и типы](/learn/js/variables).
+
+## Параметры и аргументы
+
+**Параметры** — имена в объявлении функции. **Аргументы** — значения, которые передают при вызове.
+
+```js
+function sum(a, b) {
+  // a и b — параметры
+  return a + b;
+}
+
+sum(2, 3); // 2 и 3 — аргументы, результат 5
+```
+
+JavaScript не проверяет количество аргументов:
+
+```js
+sum(2); // NaN — b не передали, она равна undefined, а 2 + undefined = NaN
+sum(2, 3, 4); // 5 — лишний аргумент просто игнорируется
+```
+
+### Значения по умолчанию
+
+Если аргумент не передан, параметр получит значение по умолчанию:
+
+```js
+function greet(name = 'Гость') {
+  return `Привет, ${name}!`;
+}
+
+greet(); // 'Привет, Гость!'
+greet('Анна'); // 'Привет, Анна!'
+greet(undefined); // 'Привет, Гость!' — undefined тоже включает значение по умолчанию
+greet(null); // 'Привет, null!' — а null уже нет: это переданное значение
+```
+
+Параметров по умолчанию может быть несколько. Обычно их ставят **в конец** списка:
+
+```js
+function greetUser(name, title = 'Гость', formal = false) {
+  if (formal) {
+    return `Уважаемый(ая) ${title} ${name}, добро пожаловать!`;
+  }
+  return `Привет, ${name} (${title})!`;
+}
+
+greetUser('Анна'); // 'Привет, Анна (Гость)!'
+greetUser('Иван', 'Доктор'); // 'Привет, Иван (Доктор)!'
+greetUser('Вадим', 'Механик', true); // 'Уважаемый(ая) Механик Вадим, добро пожаловать!'
+greetUser('Ольга', undefined, true); // чтобы пропустить title, нужно явно передать undefined
+```
+
+### Объект вместо длинного списка параметров
+
+Когда параметров много, порядок легко перепутать. Удобнее принимать **один объект** и сразу деструктурировать его:
+
+```js
+function createUserDescription({ name, age, city = 'Не указан' } = {}) {
+  if (!name || age === undefined) {
+    throw new Error('Имя и возраст обязательны!');
+  }
+
+  return `${name}, ${age} лет, город: ${city}`;
+}
+
+createUserDescription({ name: 'Andrey', age: 31, city: 'Ярославль' }); // 'Andrey, 31 лет, город: Ярославль'
+createUserDescription({ age: 25, name: 'Анна' }); // порядок не важен; город — 'Не указан'
+```
+
+`= {}` в конце нужен, чтобы вызов без аргументов дал понятную ошибку «Имя и возраст обязательны!», а не
+`TypeError: Cannot destructure property 'name' of 'undefined'`. А проверка `age === undefined` вместо `!age`
+не отбрасывает возраст `0`.
+
+### Любое количество аргументов
+
+**Остаточный параметр** `...args` собирает все переданные аргументы в массив:
+
+```js
+function sumAll(...numbers) {
+  let total = 0;
+  for (const n of numbers) {
+    total += n;
+  }
+  return total;
+}
+
+sumAll(1, 2); // 3
+sumAll(1, 2, 3, 4, 5); // 15
+sumAll(); // 0
+```
+
+## Проверка аргументов и ошибки
+
+Если функцию вызвали с неправильными данными, лучше сразу сообщить об этом, чем вернуть странный результат.
+Для этого **бросают ошибку** — `throw new Error('текст')`:
+
+```js
+function calculateArea(width, height) {
+  if (typeof width !== 'number' || typeof height !== 'number') {
+    throw new Error('Ширина и высота должны быть числами');
+  }
+
+  if (width <= 0 || height <= 0) {
+    throw new Error('Размеры должны быть положительными числами');
+  }
+
+  return width * height;
+}
+
+calculateArea(22, 33); // 726
+calculateArea(-5, 10); // Error: Размеры должны быть положительными числами
+```
+
+`throw` останавливает функцию, как `return`, но вместо значения передаёт ошибку. Её можно перехватить через `try/catch`:
+
+```js
+try {
+  const area = calculateArea('10', 5);
+  console.log(area);
+} catch (error) {
+  console.log(`Не получилось: ${error.message}`); // 'Не получилось: Ширина и высота должны быть числами'
+}
+```
+
+## Чистые функции
+
+**Чистая функция** зависит только от своих аргументов и не меняет ничего снаружи: при одних и тех же аргументах
+она всегда возвращает один и тот же результат. Такие функции проще понимать, переиспользовать и тестировать.
+
+Вот частая ошибка — функция берёт данные не из параметра, а из внешней переменной:
+
+```js
+const numbers = [3, 7, 2, 9, 1];
+
+function findMax(numbersArg) {
+  let max = numbers[0]; // ❌ используется внешний numbers, а не параметр
+
+  for (const num of numbers) {
+    if (num > max) max = num;
+  }
+
+  return max;
+}
+
+findMax(numbers); // 9 — случайно правильно
+findMax([100, 200]); // 9 — неправильно! функция смотрит не на тот массив
+```
+
+Исправленная версия работает только со своим параметром:
+
+```js
+function findMax(list) {
+  let max = list[0];
+
+  for (const num of list) {
+    if (num > max) max = num;
+  }
+
+  return max;
+}
+
+findMax([3, 7, 2, 9, 1]); // 9
+findMax([100, 200]); // 200
+```
+
+<Callout type="tip">
+  Хорошее правило: всё, что нужно функции, она получает через параметры, а всё, что она производит, — возвращает через `return`.
+  Если функция меняет внешние переменные, пишет в консоль или на страницу — это **побочные эффекты**: они нужны,
+  но держите их в отдельных функциях.
+</Callout>
+
+## Функции как значения
+
+Функция в JavaScript — такое же значение, как число или строка: её можно положить в переменную,
+передать в другую функцию или вернуть из функции.
+
+### Колбэки
+
+Функция, которую передают в другую функцию, чтобы та её вызвала, называется **колбэком** (callback):
+
+```js
+function applyTwice(fn, value) {
+  return fn(fn(value));
+}
+
+applyTwice((n) => n * 2, 5); // 20 — (5 * 2) * 2
+
+[1, 2, 3].map((n) => n * 10); // [10, 20, 30] — map вызывает колбэк для каждого элемента
+setTimeout(() => console.log('Прошла секунда'), 1000); // колбэк вызовется через 1000 мс
+```
+
+### Функция, возвращающая функцию
+
+```js
+function createMultiplier(factor) {
+  return (n) => n * factor;
+}
+
+const double = createMultiplier(2);
+const triple = createMultiplier(3);
+
+double(5); // 10
+triple(5); // 15
+```
+
+Возвращённая функция «помнит» `factor` — это замыкание, подробнее в уроке [Замыкания](/learn/js/closures).
+
+## Практика
+
+### Перевод температуры
+
+```js
+function celsiusToFahrenheit(celsius) {
+  return (celsius * 9) / 5 + 32;
+}
+
+celsiusToFahrenheit(25); // 77
+celsiusToFahrenheit(0); // 32
+celsiusToFahrenheit(-40); // -40
+```
+
+### Генератор пароля
+
+```js
+function generatePassword(length = 12) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+  let password = '';
+
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * chars.length);
+    password += chars[randomIndex];
+  }
+
+  return password;
+}
+
+generatePassword(8); // например, 'k3$Rb9!q'
+generatePassword(); // 12 символов — значение по умолчанию
+```
+
+<Callout type="info">
+  `Math.random()` подходит для учебных примеров и игр, но не для настоящих паролей и токенов: его значения можно предсказать.
+  Для безопасности используют `crypto.getRandomValues()` — он есть в браузере и в Node.js.
+</Callout>
+
+### Таймер обратного отсчёта
+
+```js
+function startCountDown(seconds) {
+  let remaining = seconds;
+
+  const timer = setInterval(() => {
+    console.log(`Осталось ${remaining} сек.`);
+    remaining--;
+
+    if (remaining < 0) {
+      clearInterval(timer);
+      console.log('Время вышло');
+      console.log(`Таймер был на ${seconds} сек.`);
+    }
+  }, 1000);
+}
+
+startCountDown(3);
+// Осталось 3 сек. → Осталось 2 сек. → Осталось 1 сек. → Осталось 0 сек. → Время вышло → Таймер был на 3 сек.
+```
+
+Здесь `setInterval` получает колбэк и вызывает его каждые 1000 мс, а `clearInterval(timer)` останавливает таймер.
+Обратите внимание на имена: `seconds` — исходное значение, которое не меняется, `remaining` — сколько осталось.
+Параметры функции лучше не изменять: так исходное значение всегда под рукой.
+
+### Проверка email
+
+```js
+const isValidEmail = (email) => email.includes('@');
+
+isValidEmail('elon@musk.com'); // true
+isValidEmail('elonmusk.com'); // false
+```
+
+`email.includes('@')` уже возвращает `true` или `false`, поэтому писать `email.includes('@') ? true : false` не нужно.
+Но такая проверка слишком простая: её проходят и `'@'`, и `'a@b@c'`. Более строгий вариант — в задачах ниже.
+
+## Проверь себя
+
+<Quiz client:visible id="js/functions/no-return" options={['5', 'undefined', 'null', "'5'"]} answer={1}>
+  Что выведет код?
+
+  ```js
+  function double(n) {
+    n * 2;
+  }
+
+  console.log(double(2.5));
+  ```
+
+  <Fragment slot="explanation">
+    Выражение `n * 2` вычисляется, но результат никуда не возвращается — в функции нет `return`.
+    Функция без `return` возвращает `undefined`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/functions/after-return" options={["1, затем 'после'", '1', "'после', затем 1", 'undefined']} answer={1}>
+  Что выведет код?
+
+  ```js
+  function getValue() {
+    return 1;
+    console.log('после');
+  }
+
+  console.log(getValue());
+  ```
+
+  <Fragment slot="explanation">
+    `return` сразу завершает функцию, поэтому `console.log('после')` не выполнится никогда.
+    Редакторы обычно подсвечивают такой код как недостижимый.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/functions/without-call" options={["Случайный пароль", 'undefined', 'Саму функцию — её код', 'Ошибку']} answer={2}>
+  Что выведет код?
+
+  ```js
+  function generatePassword(length) {
+    // ...
+    return password;
+  }
+
+  console.log(generatePassword);
+  ```
+
+  <Fragment slot="explanation">
+    Без круглых скобок функция не вызывается — `generatePassword` это сама функция как значение.
+    Чтобы получить пароль, нужно вызвать её: `generatePassword(8)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/functions/missing-arg" options={['2', 'NaN', 'undefined', 'TypeError']} answer={1}>
+  Что вернёт вызов?
+
+  ```js
+  function sum(a, b) {
+    return a + b;
+  }
+
+  sum(2);
+  ```
+
+  <Fragment slot="explanation">
+    Аргумент для `b` не передан, поэтому `b` равен `undefined`. `2 + undefined` — это `NaN`.
+    Чтобы такого не было, можно задать значение по умолчанию: `function sum(a, b = 0)`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/functions/default-null"
+  options={["'Привет, Гость!' оба раза", "'Привет, Гость!' и 'Привет, null!'", "'Привет, null!' оба раза", "'Привет, undefined!' и 'Привет, null!'"]}
+  answer={1}
+>
+  Что вернут вызовы?
+
+  ```js
+  function greet(name = 'Гость') {
+    return `Привет, ${name}!`;
+  }
+
+  greet(undefined);
+  greet(null);
+  ```
+
+  <Fragment slot="explanation">
+    Значение по умолчанию подставляется, только если аргумент **равен `undefined`** — не передан или передан явно.
+    `null` — это уже переданное значение, поэтому в строку попадёт `null`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/functions/arrow-object" options={["{ name: 'Аня' }", 'undefined', "'Аня'", 'SyntaxError']} answer={1}>
+  Что вернёт вызов?
+
+  ```js
+  const createUser = (name) => { name: name };
+
+  createUser('Аня');
+  ```
+
+  <Fragment slot="explanation">
+    Фигурные скобки после `=>` считаются **телом функции**, а не объектом. Внутри оказывается метка `name:`
+    и выражение `name` — а `return` нет, поэтому результат `undefined`.
+    Чтобы вернуть объект, нужны круглые скобки: `(name) => ({ name })`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/functions/outer-variable" options={['200', '9', '100', 'undefined']} answer={1}>
+  Что вернёт `findMax([100, 200])`?
+
+  ```js
+  const numbers = [3, 7, 2, 9, 1];
+
+  function findMax(list) {
+    let max = numbers[0];
+    for (const num of numbers) {
+      if (num > max) max = num;
+    }
+    return max;
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Функция принимает `list`, но внутри работает с внешним массивом `numbers` — параметр вообще не используется.
+    Поэтому она всегда возвращает максимум из `numbers`, то есть `9`, что бы ей ни передали.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/functions/hoisting" options={["'Привет' и 'Привет'", "'Привет', затем ReferenceError", 'ReferenceError сразу', "'Привет', затем TypeError"]} answer={1}>
+  Что произойдёт?
+
+  ```js
+  console.log(declared());
+  console.log(expressed());
+
+  function declared() {
+    return 'Привет';
+  }
+
+  const expressed = () => 'Привет';
+  ```
+
+  <Fragment slot="explanation">
+    Объявление функции поднимается целиком, поэтому `declared()` работает до своей строки.
+    Стрелочная функция — это значение в `const`, а до объявления `const` находится во временной мёртвой зоне:
+    `ReferenceError: Cannot access 'expressed' before initialization`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Почините findMax" level="easy">
+  Функция должна находить максимум **в переданном** массиве, но всегда возвращает `9`. Найдите ошибку и исправьте.
+
+  ```js
+  const numbers = [3, 7, 2, 9, 1];
+
+  function findMax(numbersArg) {
+    let max = numbers[0];
+
+    for (let num of numbers) {
+      if (num > max) {
+        max = num;
+      }
+    }
+
+    return max;
+  }
+
+  findMax([100, 200]); // должно быть 200
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function findMax(list) {
+      let max = list[0];
+
+      for (const num of list) {
+        if (num > max) {
+          max = num;
+        }
+      }
+
+      return max;
+    }
+    ```
+
+    Внутри функции использовался внешний `numbers` вместо параметра. Функция должна работать только с тем,
+    что ей передали. Заодно параметр получил понятное имя `list`, а `let num` стал `const num` —
+    внутри итерации переменная не меняется.
+  </Fragment>
+</Task>
+
+<Task title="Обратно в Цельсий" level="easy">
+  Напишите стрелочную функцию `fahrenheitToCelsius(f)` в одну строку — обратную к `celsiusToFahrenheit`.
+  Результат округлите до одного знака после запятой.
+
+  ```js
+  fahrenheitToCelsius(77); // 25
+  fahrenheitToCelsius(32); // 0
+  fahrenheitToCelsius(100); // 37.8
+  ```
+
+  <Fragment slot="hint">
+    Из формулы `F = C × 9 / 5 + 32` выразите `C`. Для округления до десятых: `Math.round(x * 10) / 10`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const fahrenheitToCelsius = (f) => Math.round(((f - 32) * 5 / 9) * 10) / 10;
+    ```
+
+    `C = (F − 32) × 5 / 9`. Сначала вычитаем 32, потом умножаем — скобки обязательны.
+    `toFixed(1)` тоже округлит, но вернёт строку, а `Math.round(x * 10) / 10` оставляет число.
+  </Fragment>
+</Task>
+
+<Task title="Короткая запись" level="easy">
+  Перепишите функции как стрелочные с неявным `return`.
+
+  ```js
+  function square(n) {
+    return n * n;
+  }
+
+  function isAdult(age) {
+    return age >= 18;
+  }
+
+  function makeUser(name, age) {
+    return { name: name, age: age };
+  }
+  ```
+
+  <Fragment slot="hint">
+    Для третьей функции вспомните, как вернуть объект из короткой стрелочной функции.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const square = (n) => n * n;
+    const isAdult = (age) => age >= 18;
+    const makeUser = (name, age) => ({ name, age });
+    ```
+
+    В `makeUser` объект обёрнут в круглые скобки — иначе `{` начнёт тело функции. А `{ name, age }` —
+    сокращённая запись `{ name: name, age: age }`.
+  </Fragment>
+</Task>
+
+<Task title="Среднее любого количества чисел" level="medium">
+  Напишите функцию `average(...numbers)`, которая принимает любое количество чисел и возвращает их среднее.
+  Без аргументов она должна возвращать `0`.
+
+  ```js
+  average(2, 4, 6); // 4
+  average(10); // 10
+  average(); // 0
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function average(...numbers) {
+      if (numbers.length === 0) return 0;
+
+      let total = 0;
+      for (const n of numbers) {
+        total += n;
+      }
+
+      return total / numbers.length;
+    }
+    ```
+
+    `...numbers` собирает все аргументы в массив. Проверка на пустой массив нужна, иначе получится `0 / 0` — `NaN`.
+  </Fragment>
+</Task>
+
+<Task title="Форматирование цены" level="medium">
+  Напишите функцию `formatPrice(amount, currency = '₽', decimals = 2)`, которая возвращает строку с ценой.
+  Если `amount` — не число, бросьте ошибку.
+
+  ```js
+  formatPrice(1500); // '1500.00 ₽'
+  formatPrice(19.9, '$'); // '19.90 $'
+  formatPrice(99.456, '€', 1); // '99.5 €'
+  formatPrice('100'); // Error: Цена должна быть числом
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function formatPrice(amount, currency = '₽', decimals = 2) {
+      if (typeof amount !== 'number' || Number.isNaN(amount)) {
+        throw new Error('Цена должна быть числом');
+      }
+
+      return `${amount.toFixed(decimals)} ${currency}`;
+    }
+    ```
+
+    Проверка на `NaN` нужна отдельно: `typeof NaN` — это `'number'`. Параметры по умолчанию стоят в конце —
+    поэтому вызов `formatPrice(1500)` работает без лишних аргументов.
+  </Fragment>
+</Task>
+
+<Task title="Проверка email построже" level="medium">
+  Напишите функцию `isValidEmail(email)`, которая возвращает `true`, только если:
+  в строке ровно один `@`, перед ним есть хотя бы один символ, а после — домен с точкой,
+  у которого есть символы до и после точки.
+
+  ```js
+  isValidEmail('elon@musk.com'); // true
+  isValidEmail('@musk.com'); // false — пусто до @
+  isValidEmail('elon@musk'); // false — в домене нет точки
+  isValidEmail('a@b@c.com'); // false — два @
+  isValidEmail('elon@.com'); // false — пусто до точки
+  ```
+
+  <Fragment slot="hint">
+    `email.split('@')` разобьёт строку на части — если частей не две, `@` не один.
+    Для домена пригодятся `indexOf('.')` или `lastIndexOf('.')`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function isValidEmail(email) {
+      const parts = email.split('@');
+      if (parts.length !== 2) return false;
+
+      const [local, domain] = parts;
+      const dot = domain.lastIndexOf('.');
+
+      return local.length > 0 && dot > 0 && dot < domain.length - 1;
+    }
+    ```
+
+    `dot > 0` — перед точкой есть символы, `dot < domain.length - 1` — после неё тоже.
+    Это всё ещё упрощённая проверка: полностью правила email очень сложные, поэтому в реальных проектах
+    формат проверяют базово, а настоящую проверку делают письмом с подтверждением.
+  </Fragment>
+</Task>
+
+<Task title="Калькулятор на колбэках" level="medium">
+  Напишите функцию `calculate(a, b, operation)`, где `operation` — функция двух аргументов.
+  Затем передайте в неё сложение, умножение и возведение в степень стрелочными функциями.
+
+  ```js
+  calculate(6, 3, (x, y) => x + y); // 9
+  calculate(6, 3, (x, y) => x * y); // 18
+  calculate(2, 10, (x, y) => x ** y); // 1024
+  ```
+
+  Добавьте проверку: если `operation` — не функция, бросьте ошибку.
+
+  <Fragment slot="solution">
+    ```js
+    function calculate(a, b, operation) {
+      if (typeof operation !== 'function') {
+        throw new Error('operation должна быть функцией');
+      }
+
+      return operation(a, b);
+    }
+
+    const add = (x, y) => x + y;
+    const multiply = (x, y) => x * y;
+    const power = (x, y) => x ** y;
+
+    calculate(6, 3, add); // 9
+    calculate(6, 3, multiply); // 18
+    calculate(2, 10, power); // 1024
+    ```
+
+    `calculate` не знает, какую операцию выполняет, — он просто вызывает переданный колбэк.
+    Новую операцию можно добавить, не меняя саму функцию: `calculate(10, 3, (x, y) => x % y)`.
+    `typeof` для функции возвращает `'function'`.
+  </Fragment>
+</Task>

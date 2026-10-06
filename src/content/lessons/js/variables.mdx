@@ -1,47 +1,636 @@
 ---
 title: Переменные и типы
-description: let, const, var и примитивные типы
+description: let, const и var, области видимости, поднятие, контекст выполнения и типы данных
 section: js
 order: 1
-tags: [basics]
+tags: [basics, scope, hoisting]
 ---
 
+import Callout from '@/components/blocks/Callout.tsx';
 import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
 
-В JavaScript 7 примитивов: `string`, `number`, `bigint`, `boolean`, `undefined`, `symbol`, `null`, а всё остальное — объекты.
+**Переменная** — это имя, под которым хранится значение. В JavaScript переменные объявляют тремя ключевыми словами:
+`let`, `const` и устаревшим `var`.
+
+## Как называть переменные
+
+### Обязательные правила
+
+Их проверяет сам язык — если нарушить, код не запустится:
+
+- имя может состоять из букв, цифр, `$` и `_`;
+- имя **не может начинаться с цифры**;
+- нельзя использовать пробелы и дефисы;
+- нельзя использовать зарезервированные слова: `let`, `class`, `return`, `function`, `if` и другие;
+- регистр важен: `name`, `Name` и `NAME` — три разные переменные.
 
 ```js
-const name = 'Andrey'; // нельзя переприсвоить
-let age = 30; // можно переприсвоить
-typeof null; // 'object' — историческая ошибка языка
+// Можно
+let userName;
+let user2;
+let _private;
+let $element;
+
+// Нельзя
+let 2user; // SyntaxError — начинается с цифры
+let user-name; // SyntaxError — дефис читается как минус
+let user name; // SyntaxError — пробел
+let class; // SyntaxError — зарезервированное слово
 ```
+
+### Соглашения
+
+Эти правила язык не проверяет, но их придерживаются почти во всех проектах — так код читается одинаково.
+
+**camelCase** для переменных и функций: первое слово с маленькой буквы, каждое следующее — с большой.
+
+```js
+const userName = 'Alice';
+const totalPrice = 1500;
+const isLoggedIn = true;
+```
+
+**UPPER_SNAKE_CASE** для «жёстких» констант — значений, которые известны до запуска программы и никогда не меняются.
+Если значение вычисляется при выполнении, это обычная переменная, даже если она объявлена через `const`:
+
+```js
+const PI = 3.14;
+const MAX_USERS = 100;
+const API_URL = 'https://api.example.com';
+
+const radius = 5;
+const area = PI * radius * radius; // 78.5 — вычисляется при выполнении, поэтому обычное имя
+```
+
+**PascalCase** — для классов и компонентов: `class UserProfile`, `function TodoList()` в React.
+
+### Как выбрать хорошее имя
+
+- **Имя объясняет, что лежит в переменной.** Не `data`, `value`, `x`, а `userList`, `orderTotal`, `selectedDate`.
+- **Логические значения** начинайте с `is`, `has`, `can`, `should`: `isVisible`, `hasAccess`, `canEdit`.
+- **Массивы** называйте во множественном числе: `users`, `products`, `selectedIds`.
+- **Функции** называйте глаголом: `getUser`, `calculateTotal`, `formatDate`.
+- **Пишите по-английски**, без транслита: `price`, а не `cena` или `stoimost`.
+- **Не сокращайте**: `button`, а не `btn`; `message`, а не `msg` — экономия пары букв не стоит потерянной ясности.
+  Исключение — общепринятые короткие имена вроде `i`, `j` в коротких циклах и `id`, `url`, `html`.
+
+| Плохо | Хорошо | Почему |
+|---|---|---|
+| `let a = 25;` | `let userAge = 25;` | По `a` непонятно, что это |
+| `let data = [];` | `let products = [];` | `data` подходит к чему угодно |
+| `let flag = true;` | `let isMenuOpen = true;` | Видно, что это да/нет, и про что |
+| `let user_name;` | `let userName;` | В JavaScript принят camelCase |
+| `let polzovatel;` | `let user;` | Транслит хуже читается |
+| `let usrCnt;` | `let userCount;` | Сокращения приходится расшифровывать |
+| `const getUsers = [];` | `const users = [];` | Глагол в имени обещает функцию |
+
+## let, const и var
+
+```js
+let age = 30; // можно переприсвоить
+age = 31;
+
+const name = 'Andrey'; // переприсвоить нельзя
+name = 'Roman'; // TypeError: Assignment to constant variable.
+
+let a; // let можно объявить без значения — будет undefined
+a = 5;
+
+const b; // SyntaxError: const нужно сразу присвоить значение
+```
+
+|  | `let` | `const` | `var` |
+|---|---|---|---|
+| Переприсвоение | да | нет | да |
+| Объявление без значения | да | нет | да |
+| Повторное объявление в той же области | нет, `SyntaxError` | нет, `SyntaxError` | да, молча |
+| Область видимости | блок | блок | функция |
+| До строки объявления | `ReferenceError` (TDZ) | `ReferenceError` (TDZ) | `undefined` |
+
+Правило по умолчанию: **пишите `const`**, а `let` — только если значение действительно будет меняться.
+`var` в новом коде не используют, но его нужно понимать, чтобы читать старый код и отвечать на собеседованиях.
+
+### const и объекты
+
+`const` запрещает переприсвоить **переменную**, но не делает неизменяемым значение. Объекты и массивы
+внутри `const` можно менять:
+
+```js
+const obj = { name: 'Alice' };
+obj.name = 'Roman'; // можно — меняем объект, а не переменную
+console.log(obj.name); // 'Roman'
+
+const arr = [1, 2, 3];
+arr.push(4); // можно
+console.log(arr); // [1, 2, 3, 4]
+
+arr = [5, 6]; // TypeError — переприсвоить переменную нельзя
+```
+
+## Области видимости
+
+**Область видимости** (scope) определяет, где переменная доступна.
+
+### Блочная
+
+`let` и `const` видны только внутри блока `{ … }`, где объявлены: в `if`, `for`, `while` или просто в фигурных скобках.
+
+```js
+if (true) {
+  let blockVar = 'Я в блоке!';
+  console.log(blockVar); // 'Я в блоке!'
+}
+
+console.log(blockVar); // ReferenceError: blockVar is not defined
+```
+
+### Затенение
+
+Переменная во внутреннем блоке может иметь то же имя, что и внешняя. Тогда внутри блока она **затеняет** внешнюю,
+а внешняя остаётся нетронутой:
+
+```js
+let x = 10;
+
+if (true) {
+  let x = 2; // новая переменная, видна только в блоке
+  console.log('x', x); // x 2
+}
+
+console.log('x', x); // x 10
+```
+
+Если же **не объявлять** переменную заново, а просто присвоить, изменится внешняя:
+
+```js
+let f = 100;
+
+if (true) {
+  f = 200; // нет let — меняем внешнюю f
+  console.log('f', f); // f 200
+}
+
+console.log('f', f); // f 200
+```
+
+### Функциональная и глобальная
+
+Переменная, объявленная внутри функции, видна только в ней. Переменная, объявленная на верхнем уровне, — глобальная
+и видна везде, в том числе внутри функций:
+
+```js
+let globalVar = 'Я глобальная переменная';
+const e = 10;
+
+function foo() {
+  console.log(globalVar); // доступна внутри функции
+  const e = 20; // своя e — не конфликтует с внешней
+  console.log(e); // 20
+}
+
+foo();
+console.log(e); // 10
+```
+
+### var не видит блоков
+
+У `var` область видимости — вся функция (или весь скрипт), блоки она игнорирует:
+
+```js
+if (true) {
+  var fromBlock = 'утекла из блока';
+}
+
+console.log(fromBlock); // 'утекла из блока'
+```
+
+Именно из-за этого `var` в циклах ведёт себя неожиданно — подробнее в уроке [Замыкания](/learn/js/closures).
+
+## Поднятие (hoisting)
+
+Перед выполнением кода движок заранее «регистрирует» все объявления в области видимости. Выглядит это так,
+будто объявления **поднимаются** наверх. Но поднимаются они по-разному:
+
+```js
+console.log(hoisted); // undefined — var поднята и сразу равна undefined
+var hoisted = 'var';
+
+console.log(notYet); // ReferenceError: Cannot access 'notYet' before initialization
+let notYet = 'let';
+
+sayHi(); // 'Привет!' — объявление функции поднимается целиком
+function sayHi() {
+  console.log('Привет!');
+}
+
+greet(); // TypeError: greet is not a function — поднялась только var greet = undefined
+var greet = function () {
+  console.log('Привет!');
+};
+```
+
+| Что объявлено | Что доступно до строки объявления |
+|---|---|
+| `var x = …` | `x` существует и равна `undefined` |
+| `let x` / `const x` | `x` существует, но обращение — `ReferenceError` |
+| `function f() {}` | функция целиком, её можно вызвать |
+| `var f = function () {}` | `f` равна `undefined`, вызов — `TypeError` |
+| `const f = () => {}` | обращение — `ReferenceError` |
+
+### Временная мёртвая зона
+
+`let` и `const` тоже поднимаются, но остаются **неинициализированными** до своей строки. Промежуток от начала блока
+до объявления называется **временной мёртвой зоной** (TDZ, temporal dead zone). Лучше всего её видно в таком примере:
+
+```js
+let x = 1;
+
+{
+  console.log(x); // ReferenceError, а не 1!
+  let x = 2;
+}
+```
+
+Внутренний `x` уже зарегистрирован в блоке и затеняет внешний, но ещё не инициализирован — поэтому ошибка.
+
+<Callout type="warning">
+  `ReferenceError` бывает двух видов. `Cannot access 'x' before initialization` — переменная есть, но вы в её TDZ.
+  `x is not defined` — переменной в доступных областях видимости нет вообще (например, она объявлена в другом блоке).
+</Callout>
+
+## Контекст выполнения
+
+Поднятие и области видимости — следствие того, как движок выполняет код. Любой код выполняется внутри
+**контекста выполнения** (execution context). Он создаётся:
+
+- один раз для всего скрипта — **глобальный контекст**;
+- заново при **каждом вызове** функции — контекст функции.
+
+Каждый контекст проходит две фазы:
+
+1. **Создание.** Движок просматривает код области и заводит **лексическое окружение** — таблицу переменных:
+   `var` записываются со значением `undefined`, объявления функций — сразу целиком, а `let` и `const` —
+   без значения (отсюда TDZ). Здесь же определяется `this` и ссылка на внешнее окружение.
+2. **Выполнение.** Код идёт строка за строкой: переменным присваиваются значения, вызываются функции.
+
+Контексты складываются в **стек вызовов**: вызов функции кладёт её контекст наверх стека, `return` — снимает.
+
+```js
+function multiply(a, b) {
+  return a * b;
+}
+
+function square(n) {
+  return multiply(n, n);
+}
+
+square(3);
+// стек: [глобальный] → [глобальный, square] → [глобальный, square, multiply]
+//       → multiply вернула 9 → [глобальный, square] → square вернула 9 → [глобальный]
+```
+
+### Цепочка областей видимости
+
+У каждого лексического окружения есть ссылка на **внешнее** — то, в котором функция была **объявлена**.
+Если переменной нет в текущем окружении, движок ищет её во внешнем, потом во внешнем к нему и так до глобального.
+Это и есть **цепочка областей видимости** (scope chain).
+
+```js
+const level = 'глобальный';
+
+function outer() {
+  const level = 'outer';
+
+  function inner() {
+    console.log(level); // в inner переменной нет → нашлась в outer
+  }
+
+  inner();
+}
+
+outer(); // 'outer'
+```
+
+Важно: цепочка строится по месту **объявления** функции, а не по месту вызова:
+
+```js
+const value = 'глобальная';
+
+function show() {
+  console.log(value);
+}
+
+function run() {
+  const value = 'локальная';
+  show(); // show объявлена снаружи run — локальную value она не видит
+}
+
+run(); // 'глобальная'
+```
+
+Такие области видимости называют **лексическими**. На них построены [замыкания](/learn/js/closures).
+
+### this — тоже часть контекста
+
+Кроме переменных, в контексте выполнения определяется `this`. Он зависит не от места объявления функции,
+а от того, **как её вызвали**:
+
+```js
+'use strict';
+
+const user = {
+  name: 'Alice',
+  showName() {
+    console.log(this?.name);
+  },
+};
+
+user.showName(); // 'Alice' — вызвали как метод, this = user
+
+const fn = user.showName;
+fn(); // undefined — обычный вызов, в строгом режиме this = undefined
+```
+
+У стрелочных функций своего `this` нет — они берут его из внешнего контекста.
+Подробнее про `this` в методах — в уроке [Объекты](/learn/js/objects).
+
+## Деструктуризация
+
+Деструктуризация позволяет объявить сразу несколько переменных, достав значения из объекта или массива:
+
+```js
+const person = { userName: 'Alice', userAge: 25 };
+const { userName, userAge } = person; // по именам свойств
+console.log(userName, userAge); // Alice 25
+
+const numbers = [1, 2, 3];
+const [first, second] = numbers; // по позиции
+console.log(first, second); // 1 2
+
+const user = { name: 'Andrey', age: 31, skills: 'Frontend developer' };
+const { name: peopleName, age: peopleAge = 18 } = user; // с переименованием и значением по умолчанию
+```
+
+## Типы данных
+
+В JavaScript 8 типов: 7 **примитивов** — `string`, `number`, `bigint`, `boolean`, `undefined`, `null`, `symbol` —
+и `object`, к которому относятся также массивы и функции.
+
+### Примитивы
+
+**Примитив** — это простое значение, а не объект: у него нет собственных свойств, и его нельзя изменить —
+только заменить другим значением.
+
+#### string — строки
+
+Текст в одинарных, двойных или обратных кавычках. В обратных кавычках (шаблонных строках) можно подставлять
+выражения через `${…}` и переносить строки.
+
+```js
+const single = 'Привет';
+const double = "Привет";
+const name = 'Andrey';
+const greeting = `Привет, ${name}! Сегодня ${2 + 3} задач`; // 'Привет, Andrey! Сегодня 5 задач'
+
+name.length; // 6
+name[0]; // 'A'
+name.toUpperCase(); // 'ANDREY' — возвращает новую строку
+name; // 'Andrey' — исходная не изменилась
+
+name[0] = 'B'; // молча игнорируется (в строгом режиме — TypeError)
+```
+
+#### number — числа
+
+Один тип и для целых, и для дробных чисел. Есть особые значения `Infinity`, `-Infinity` и `NaN` («не число»).
+
+```js
+const integer = 42;
+const float = 3.14;
+const big = 1_000_000; // подчёркивания — для читаемости
+
+1 / 0; // Infinity
+'abc' * 2; // NaN — результат некорректной математической операции
+NaN === NaN; // false — NaN не равен даже самому себе
+Number.isNaN(NaN); // true — так проверяют на NaN
+
+0.1 + 0.2; // 0.30000000000000004 — дробные числа хранятся в двоичном виде неточно
+(0.1 + 0.2).toFixed(2); // '0.30'
+
+Number.MAX_SAFE_INTEGER; // 9007199254740991 — больше этого целые числа теряют точность
+```
+
+#### bigint — большие целые числа
+
+Для целых чисел любой длины. Записываются с `n` на конце. Смешивать с `number` в арифметике нельзя.
+
+```js
+const huge = 9007199254740993n;
+huge + 1n; // 9007199254740994n
+10n / 3n; // 3n — деление отбрасывает дробную часть
+
+9007199254740993; // 9007199254740992 — обычный number уже потерял точность
+1n + 1; // TypeError: Cannot mix BigInt and other types
+```
+
+#### boolean — логические значения
+
+Всего два значения: `true` и `false`. Получаются из сравнений и используются в условиях.
+
+```js
+const isStudent = true;
+const isAdult = 25 >= 18; // true
+
+Boolean(0); // false
+Boolean('текст'); // true
+```
+
+В условиях любое значение приводится к логическому. **Ложными** (falsy) считаются только `false`, `0`, `-0`, `0n`,
+`''`, `null`, `undefined` и `NaN` — всё остальное **истинно** (truthy), в том числе `'0'`, `' '`, `[]` и `{}`.
+
+```js
+if ('0') console.log('сработает'); // строка '0' не пустая — truthy
+if ([]) console.log('и это'); // пустой массив — объект, а объекты всегда truthy
+```
+
+#### undefined — «значение не задано»
+
+Значение по умолчанию: его получают переменная без значения, отсутствующее свойство,
+функция без `return` и не переданный аргумент.
+
+```js
+let a;
+a; // undefined
+
+const user = { name: 'Alice' };
+user.age; // undefined
+
+function noReturn() {}
+noReturn(); // undefined
+
+function greet(name) {
+  return name;
+}
+greet(); // undefined
+```
+
+#### null — «значения нет намеренно»
+
+`null` присваивают сами, чтобы явно показать, что значения нет: например, пользователь не выбран или элемент не найден.
+
+```js
+let selectedUser = null; // пока никто не выбран
+
+document.getElementById('нет-такого-id'); // null
+
+null == undefined; // true — нестрогое сравнение считает их равными
+null === undefined; // false — это разные типы
+```
+
+Разница по смыслу: `undefined` ставит сам язык («ещё не задано»), `null` — программист («здесь пусто»).
+
+#### symbol — уникальные идентификаторы
+
+Каждый `Symbol()` уникален, даже с одинаковым описанием. Символы используют как ключи свойств,
+которые не пересекутся с другими ключами и не попадут в обычный перебор.
+
+```js
+const id1 = Symbol('id');
+const id2 = Symbol('id');
+id1 === id2; // false — каждый символ уникален
+
+const user = { name: 'Alice', [id1]: 123 };
+user[id1]; // 123
+Object.keys(user); // ['name'] — символьные ключи не перебираются
+```
+
+### Примитивы и объекты: значение и ссылка
+
+Главное практическое различие: примитивы **копируются по значению**, а объекты — **по ссылке**.
+
+```js
+let a = 'текст';
+let b = a; // b получила копию значения
+b = 'другой текст';
+console.log(a); // 'текст' — a не изменилась
+
+const obj1 = { name: 'Alice' };
+const obj2 = obj1; // obj2 получила ссылку на тот же объект
+obj2.name = 'Roman';
+console.log(obj1.name); // 'Roman' — изменился «общий» объект
+```
+
+Так же и при сравнении: примитивы сравниваются по значению (`'abc' === 'abc'` — `true`),
+а объекты — по ссылке (`{} === {}` — `false`). Подробнее про копирование объектов — в уроке [Объекты](/learn/js/objects).
+
+### typeof
+
+Узнать тип значения можно оператором `typeof`:
+
+```js
+const personName = 'Elena';
+const personAge = 25;
+const isStudent = true;
+const personData = { name: 'Alice' };
+
+console.log(`
+  Тип personName: ${typeof personName}
+  Тип personAge: ${typeof personAge}
+  Тип isStudent: ${typeof isStudent}
+  Тип personData: ${typeof personData}
+`);
+// Тип personName: string
+// Тип personAge: number
+// Тип isStudent: boolean
+// Тип personData: object
+```
+
+| Выражение | Результат |
+|---|---|
+| `typeof 'текст'` | `'string'` |
+| `typeof 42`, `typeof NaN` | `'number'` |
+| `typeof 10n` | `'bigint'` |
+| `typeof true` | `'boolean'` |
+| `typeof undefined` | `'undefined'` |
+| `typeof Symbol()` | `'symbol'` |
+| `typeof null` | `'object'` — историческая ошибка языка |
+| `typeof {}`, `typeof []` | `'object'` |
+| `typeof function () {}` | `'function'` |
+
+Чтобы отличить `null` и массивы от обычных объектов, используйте `value === null` и `Array.isArray(value)`.
+
+## Итоговый пример: вывод на страницу
+
+Соберём всё вместе: объект, деструктуризацию с переименованием и шаблонные строки — и выведем данные в HTML.
+
+```html
+<p id="p1"></p>
+<p id="p2"></p>
+<p id="p3"></p>
+<div id="all"></div>
+```
+
+```js
+const user = {
+  name: 'Andrey',
+  age: 31,
+  skills: 'Frontend developer',
+};
+
+const { name: peopleName, age: peopleAge, skills: peopleSkills } = user;
+
+// textContent вставляет текст как есть — безопасно для любых данных
+document.getElementById('p1').textContent = `Имя: ${peopleName}`;
+document.getElementById('p2').textContent = `Возраст: ${peopleAge}`;
+document.getElementById('p3').textContent = `Скилы: ${peopleSkills}`;
+
+// innerHTML разбирает строку как HTML — можно вставить разметку
+document.getElementById('all').innerHTML += `
+  <p>Имя: ${peopleName}</p>
+  <p>Возраст: ${peopleAge}</p>
+  <p>Скилы: ${peopleSkills}</p>
+`;
+```
+
+<Callout type="danger">
+  Не вставляйте через `innerHTML` данные, которые пришли от пользователя или с сервера: строка вида
+  `<img src=x onerror="…">` выполнит чужой код (XSS). Для текста всегда используйте `textContent`.
+</Callout>
+
+<Callout type="tip">
+  Скрипт должен выполняться после того, как элементы появились на странице, — иначе `getElementById` вернёт `null`.
+  Подключайте его в конце `<body>` или с атрибутом `defer`.
+</Callout>
 
 ## Проверь себя
 
-<Quiz client:visible id="js/variables/typeof-null" options={["'null'", "'object'", "'undefined'", 'TypeError']} answer={1}>
-  Что вернёт выражение?
-
-  ```js
-  typeof null;
-  ```
+<Quiz client:visible id="js/variables/naming" options={['_count', '$button', '2ndPlace', 'userName2']} answer={2}>
+  Какое имя переменной **недопустимо**?
 
   <Fragment slot="explanation">
-    `typeof null` возвращает `'object'` — это ошибка из первой версии языка, которую не исправили ради совместимости.
-    Проверять на `null` нужно строгим сравнением: `value === null`.
+    Имя не может начинаться с цифры — `let 2ndPlace` даст `SyntaxError`. Цифры можно использовать в середине или в конце
+    (`userName2`), а `_` и `$` — в любом месте, в том числе в начале.
   </Fragment>
 </Quiz>
 
-<Quiz client:visible id="js/variables/tdz" options={['undefined', '1', 'ReferenceError', 'null']} answer={2}>
-  Что произойдёт?
+<Quiz client:visible id="js/variables/shadowing" options={['x 2, затем x 2', 'x 2, затем x 10', 'x 10, затем x 10', 'ReferenceError']} answer={1}>
+  Что выведет код?
 
   ```js
-  console.log(a);
-  let a = 1;
+  let x = 10;
+
+  if (true) {
+    let x = 2;
+    console.log('x', x);
+  }
+
+  console.log('x', x);
   ```
 
   <Fragment slot="explanation">
-    `let` и `const` тоже поднимаются, но до строки объявления находятся во «временной мёртвой зоне» (TDZ):
-    обращение к ним бросает `ReferenceError`. С `var` здесь был бы `undefined`.
+    `let x = 2` внутри блока — новая переменная, которая затеняет внешнюю только в этом блоке.
+    Снаружи по-прежнему видна внешняя `x`, равная `10`.
   </Fragment>
 </Quiz>
 
@@ -59,3 +648,326 @@ typeof null; // 'object' — историческая ошибка языка
     Чтобы запретить изменение свойств, используйте `Object.freeze(user)`.
   </Fragment>
 </Quiz>
+
+<Quiz client:visible id="js/variables/var-block" options={["'блок'", 'undefined', 'ReferenceError']} answer={0}>
+  Что выведет код?
+
+  ```js
+  if (true) {
+    var v = 'блок';
+  }
+
+  console.log(v);
+  ```
+
+  <Fragment slot="explanation">
+    У `var` нет блочной области видимости: переменная принадлежит всей функции или скрипту, поэтому видна и после `if`.
+    С `let` здесь был бы `ReferenceError: v is not defined`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/redeclare" options={['1', '2', 'SyntaxError', 'undefined']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  let a = 1;
+  let a = 2;
+  console.log(a);
+  ```
+
+  <Fragment slot="explanation">
+    Повторно объявить `let` в той же области нельзя. Это `SyntaxError` — он обнаруживается ещё до выполнения,
+    поэтому не выполнится вообще ни одна строка скрипта. С `var` код бы сработал и вывел `2`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/tdz" options={['undefined', '1', 'ReferenceError', 'null']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  console.log(a);
+  let a = 1;
+  ```
+
+  <Fragment slot="explanation">
+    `let` и `const` тоже поднимаются, но до строки объявления находятся во «временной мёртвой зоне» (TDZ):
+    обращение к ним бросает `ReferenceError`. С `var` здесь был бы `undefined`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/tdz-shadow" options={['1', '2', 'undefined', 'ReferenceError']} answer={3}>
+  Что выведет код?
+
+  ```js
+  let x = 1;
+
+  {
+    console.log(x);
+    let x = 2;
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Внутренний `let x` зарегистрирован во всём блоке с самого его начала и затеняет внешний `x`.
+    Но до строки объявления он находится в TDZ, поэтому `console.log(x)` бросает `ReferenceError`, а не выводит `1`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/variables/function-expression-hoisting"
+  options={["'Привет!'", 'undefined', 'TypeError', 'ReferenceError']}
+  answer={2}
+>
+  Что произойдёт?
+
+  ```js
+  greet();
+
+  var greet = function () {
+    console.log('Привет!');
+  };
+  ```
+
+  <Fragment slot="explanation">
+    Поднимается только объявление `var greet` со значением `undefined`, а функция присваивается позже.
+    Вызов `undefined()` — это `TypeError: greet is not a function`. Если бы это было объявление
+    `function greet() {}`, вызов сработал бы.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/lexical-scope" options={["'глобальная'", "'локальная'", 'undefined', 'ReferenceError']} answer={0}>
+  Что выведет код?
+
+  ```js
+  const value = 'глобальная';
+
+  function show() {
+    console.log(value);
+  }
+
+  function run() {
+    const value = 'локальная';
+    show();
+  }
+
+  run();
+  ```
+
+  <Fragment slot="explanation">
+    Внешнее окружение функции определяется местом её **объявления**, а не вызова. `show` объявлена на верхнем уровне,
+    поэтому ищет `value` в глобальной области и не видит локальную переменную `run`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/typeof-null" options={["'null'", "'object'", "'undefined'", 'TypeError']} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  typeof null;
+  ```
+
+  <Fragment slot="explanation">
+    `typeof null` возвращает `'object'` — это ошибка из первой версии языка, которую не исправили ради совместимости.
+    Проверять на `null` нужно строгим сравнением: `value === null`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/typeof-nan" options={["'NaN'", "'number'", "'undefined'", "'object'"]} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  typeof NaN;
+  ```
+
+  <Fragment slot="explanation">
+    `NaN` («не число») — это особое значение **типа** `number`: так обозначается результат некорректной
+    математической операции. Проверять на него нужно через `Number.isNaN(value)`, потому что `NaN === NaN` — `false`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/variables/truthy" options={['ничего', "только 'строка'", "только 'массив'", "'строка' и 'массив'"]} answer={3}>
+  Что выведет код?
+
+  ```js
+  if ('0') console.log('строка');
+  if ([]) console.log('массив');
+  ```
+
+  <Fragment slot="explanation">
+    Ложных значений всего восемь: `false`, `0`, `-0`, `0n`, `''`, `null`, `undefined` и `NaN`.
+    Строка `'0'` не пустая, а пустой массив — объект, а объекты всегда истинны. Поэтому сработают оба условия.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Переименуйте переменные" level="easy">
+  Код работает, но читать его тяжело. Переименуйте переменные по правилам из урока.
+
+  ```js
+  const n = 'Alice';
+  const a = 25;
+  const flag = true;
+  const arr = ['admin', 'editor'];
+  const max_login_attempts = 5;
+  const cena = 1500;
+  ```
+
+  <Fragment slot="hint">
+    Определите, что хранит каждая переменная: имя, возраст, логическое значение, список, константу или цену.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const userName = 'Alice';
+    const userAge = 25;
+    const isAdmin = true;
+    const roles = ['admin', 'editor'];
+    const MAX_LOGIN_ATTEMPTS = 5;
+    const price = 1500;
+    ```
+
+    - `n`, `a` → `userName`, `userAge`: имя говорит, что хранится.
+    - `flag` → `isAdmin`: префикс `is` показывает, что это да/нет. Конкретное имя зависит от смысла флага.
+    - `arr` → `roles`: множественное число для массива и смысл вместо типа.
+    - `max_login_attempts` → `MAX_LOGIN_ATTEMPTS`: жёсткая константа — заглавными через подчёркивание.
+    - `cena` → `price`: по-английски, без транслита.
+  </Fragment>
+</Task>
+
+<Task title="Найдите ошибки" level="easy">
+  В коде три ошибки. Найдите их, объясните и исправьте так, чтобы код выводил `6` и `'Борис'`.
+
+  ```js
+  const total;
+  total = 0;
+
+  for (let i = 1; i <= 3; i++) {
+    const item = i;
+    total += item;
+  }
+
+  console.log(total, item);
+
+  const user = { name: 'Аня' };
+  user = { name: 'Борис' };
+  console.log(user.name);
+  ```
+
+  <Fragment slot="hint">
+    Проверьте каждое `const`: можно ли его объявить без значения и можно ли его переприсвоить.
+    И где видна переменная `item`?
+  </Fragment>
+
+  <Fragment slot="solution">
+    1. `const total;` — `SyntaxError`: `const` нужно сразу инициализировать. А так как `total` меняется в цикле, нужен `let`.
+    2. `console.log(total, item)` — `item` объявлена внутри блока цикла и снаружи не видна: `ReferenceError`.
+    3. `user = { … }` — переприсвоение `const`: `TypeError`. Нужно либо изменить свойство, либо объявить через `let`.
+
+    ```js
+    let total = 0;
+
+    for (let i = 1; i <= 3; i++) {
+      const item = i;
+      total += item;
+    }
+
+    console.log(total); // 6
+
+    const user = { name: 'Аня' };
+    user.name = 'Борис';
+    console.log(user.name); // 'Борис'
+    ```
+  </Fragment>
+</Task>
+
+<Task title="Обмен значениями" level="easy">
+  Даны две переменные. Поменяйте их значения местами **одной строкой**, без третьей переменной.
+
+  ```js
+  let a = 'первая';
+  let b = 'вторая';
+
+  // ваш код
+
+  console.log(a, b); // 'вторая' 'первая'
+  ```
+
+  <Fragment slot="hint">
+    Деструктуризация массива работает и при присваивании уже объявленных переменных.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    [a, b] = [b, a];
+    ```
+
+    Справа создаётся массив `['вторая', 'первая']` из текущих значений, а слева он раскладывается обратно по переменным.
+    Переменные должны быть объявлены через `let` — `const` переприсвоить нельзя.
+  </Fragment>
+</Task>
+
+<Task title="getType: уточнённый typeof" level="medium">
+  Напишите функцию `getType(value)`, которая работает как `typeof`, но для `null` возвращает `'null'`,
+  а для массивов — `'array'`.
+
+  ```js
+  getType('текст'); // 'string'
+  getType(42); // 'number'
+  getType(null); // 'null'
+  getType([1, 2]); // 'array'
+  getType({}); // 'object'
+  getType(() => {}); // 'function'
+  getType(undefined); // 'undefined'
+  ```
+
+  <Fragment slot="hint">
+    Сначала обработайте особые случаи: строгое сравнение с `null` и `Array.isArray`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function getType(value) {
+      if (value === null) return 'null';
+      if (Array.isArray(value)) return 'array';
+      return typeof value;
+    }
+    ```
+
+    Порядок проверок важен: `typeof` для `null` и для массива вернёт `'object'`, поэтому особые случаи проверяем раньше.
+    `Array.isArray` надёжнее, чем `value instanceof Array`: он правильно работает и с массивами из других окон (`iframe`).
+  </Fragment>
+</Task>
+
+<Task title="Объясните вывод" level="medium">
+  Не запуская код, определите, что он выведет, и объясните каждую строку через поднятие и TDZ.
+
+  ```js
+  console.log(typeof a);
+  console.log(typeof b);
+  console.log(typeof c);
+
+  var a = 1;
+  function b() {}
+  let c = 3;
+  ```
+
+  <Fragment slot="hint">
+    Вспомните фазу создания контекста: что записывается в окружение для `var`, для объявления функции и для `let`.
+    И помните, что `typeof` для необъявленной переменной ошибку не бросает — а для переменной в TDZ?
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```
+    undefined
+    function
+    ReferenceError: Cannot access 'c' before initialization
+    ```
+
+    - `a` — `var` поднята со значением `undefined`, поэтому `typeof a` — `'undefined'`.
+    - `b` — объявление функции поднимается целиком, `typeof b` — `'function'`.
+    - `c` — `let` зарегистрирована, но находится в TDZ. Обращение к ней бросает ошибку **даже через `typeof`**,
+      хотя для вообще не объявленной переменной `typeof` спокойно вернул бы `'undefined'`.
+  </Fragment>
+</Task>

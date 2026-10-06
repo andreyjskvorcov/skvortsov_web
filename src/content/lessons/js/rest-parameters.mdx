@@ -1,0 +1,516 @@
+---
+title: Rest-параметры
+description: Сбор аргументов функции в массив через ...rest, правила, отличие от arguments и spread, функции-обёртки
+section: js
+order: 12
+level: beginner
+tags: [functions, rest, parameters]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Rest-параметр** — параметр функции с тремя точками перед именем: `...items`. Он **собирает все переданные аргументы
+в массив**. Так можно написать функцию, которая принимает любое количество значений.
+
+## Синтаксис
+
+```js
+function allFoods(...foods) {
+  console.log(foods);
+}
+
+allFoods('Картофель', 'Морковь', 'Кукуруза'); // ['Картофель', 'Морковь', 'Кукуруза']
+allFoods('Яблоко'); // ['Яблоко']
+allFoods(); // [] — без аргументов получится пустой массив, а не undefined
+```
+
+Сколько бы аргументов ни передали, внутри функции `foods` — обычный массив, и его можно вернуть, сохранить или перебрать:
+
+```js
+function getFood(...foods) {
+  return foods;
+}
+
+const foods = getFood('Картофель', 'Морковь', 'Кукуруза');
+console.log(foods); // ['Картофель', 'Морковь', 'Кукуруза']
+```
+
+## Массив или отдельные значения
+
+В одной функции три точки могут встретиться дважды — и делать противоположное:
+
+```js
+function allFoods(...foods) {
+  // rest — собрал аргументы в массив
+  console.log(foods); // ['Картофель', 'Морковь', 'Кукуруза']
+
+  // spread — раскрыл массив обратно в отдельные аргументы
+  console.log(...foods); // Картофель Морковь Кукуруза
+}
+
+allFoods('Картофель', 'Морковь', 'Кукуруза');
+```
+
+`console.log(...foods)` — то же самое, что `console.log('Картофель', 'Морковь', 'Кукуруза')`:
+`console.log` получает три аргумента и выводит их через пробел.
+
+Правило, чтобы не путать:
+
+- `...` **в объявлении параметров** — rest: собирает;
+- `...` **в вызове функции** или внутри `[…]` и `{…}` — spread: раскрывает.
+
+Подробнее про spread — в уроке [Spread и rest](/learn/js/spread).
+
+## Rest — настоящий массив
+
+У rest-параметра есть все методы массива: `map`, `filter`, `reduce`, `includes` и другие.
+
+```js
+function sum(...numbers) {
+  let result = 0;
+
+  for (const number of numbers) {
+    result += number;
+  }
+
+  return result;
+}
+
+console.log(`Сумма: ${sum(1, 2, 3, 4, 5)}`); // Сумма: 15
+```
+
+То же самое короче — через `reduce`:
+
+```js
+const sum = (...numbers) => numbers.reduce((total, n) => total + n, 0);
+
+sum(1, 2, 3, 4, 5); // 15
+sum(); // 0
+```
+
+```js
+function onlyPositive(...numbers) {
+  return numbers.filter((n) => n > 0);
+}
+
+onlyPositive(3, -1, 8, 0, -5, 2); // [3, 8, 2]
+```
+
+## Rest вместе с обычными параметрами
+
+Первые аргументы можно принять в обычные параметры, а «всё остальное» — в rest:
+
+```js
+function formatList(title, ...items) {
+  return `${title}: ${items.join(', ')}`;
+}
+
+formatList('Покупки', 'хлеб', 'молоко', 'сыр'); // 'Покупки: хлеб, молоко, сыр'
+formatList('Пусто'); // 'Пусто: ' — items = []
+```
+
+```js
+function log(level, ...messages) {
+  console.log(`[${level.toUpperCase()}]`, ...messages);
+}
+
+log('info', 'Сервер запущен', 'на порту', 3000); // [INFO] Сервер запущен на порту 3000
+log('error', 'Нет соединения'); // [ERROR] Нет соединения
+```
+
+Обычные параметры получают аргументы по порядку, а rest — то, что осталось после них.
+
+## Правила
+
+<Callout type="warning">
+  - Rest-параметр может быть **только один**.
+  - Он всегда стоит **последним**: `function f(a, ...rest)` — можно, `function f(...rest, a)` — `SyntaxError`.
+  - У rest **не бывает значения по умолчанию**: `function f(...items = [])` — `SyntaxError`. Оно и не нужно —
+    без аргументов rest и так пустой массив.
+</Callout>
+
+Свойство `length` функции показывает количество **обычных** параметров — rest в нём не учитывается:
+
+```js
+function example(a, b, ...rest) {}
+
+example.length; // 2
+```
+
+## arguments — как было раньше
+
+До появления rest-параметров все аргументы функции можно было получить через специальную переменную `arguments`:
+
+```js
+function oldSum() {
+  let total = 0;
+  for (let i = 0; i < arguments.length; i++) {
+    total += arguments[i];
+  }
+  return total;
+}
+
+oldSum(1, 2, 3); // 6
+```
+
+Вы встретите его в старом коде, но в новом лучше использовать rest:
+
+|  | `...rest` | `arguments` |
+|---|---|---|
+| Что это | настоящий массив | «псевдомассив»: есть индексы и `length`, но нет `map`, `filter`, `reduce` |
+| Что содержит | только аргументы после обычных параметров | все аргументы подряд |
+| В стрелочных функциях | работает | своего `arguments` нет |
+| По сигнатуре видно, что функция принимает много значений | да | нет — параметров не видно |
+
+```js
+function compare(...rest) {
+  console.log(Array.isArray(rest)); // true
+  console.log(Array.isArray(arguments)); // false
+}
+```
+
+## Rest в деструктуризации
+
+Те же три точки собирают остаток и при деструктуризации — массива или объекта.
+
+```js
+const fruits = ['Яблоко', 'Банан', 'Апельсин', 'Киви'];
+
+const [first, second, ...others] = fruits;
+
+console.log(first); // 'Яблоко'
+console.log(second); // 'Банан'
+console.log(others); // ['Апельсин', 'Киви'] — массив
+console.log(...others); // Апельсин Киви — отдельные элементы через spread
+```
+
+```js
+const { id, ...data } = { id: 7, name: 'Аня', age: 25 };
+
+console.log(id); // 7
+console.log(data); // { name: 'Аня', age: 25 }
+```
+
+Деструктуризацию можно делать прямо в параметрах: `function first([head, ...tail]) { … }` —
+тогда функция принимает **один** массив и сразу раскладывает его.
+
+## Собрать и передать дальше
+
+Rest и spread часто работают в паре: функция собирает аргументы через rest и передаёт их другой функции через spread.
+Так пишут **обёртки** — функции, которые добавляют поведение к другой функции, не зная, сколько у неё параметров:
+
+```js
+function withLogging(fn) {
+  return function (...args) {
+    console.log(`Вызов ${fn.name} с аргументами:`, args);
+    const result = fn(...args);
+    console.log(`Результат: ${result}`);
+    return result;
+  };
+}
+
+function multiply(a, b) {
+  return a * b;
+}
+
+const loggedMultiply = withLogging(multiply);
+
+loggedMultiply(6, 7);
+// Вызов multiply с аргументами: [6, 7]
+// Результат: 42
+```
+
+Обёртка работает с функцией любой «арности» — с одним аргументом, с двумя, с десятью:
+`...args` соберёт всё, что передали, а `fn(...args)` передаст это дальше без изменений.
+
+## Проверь себя
+
+<Quiz
+  client:visible
+  id="js/rest/log-spread"
+  options={["['Картофель', 'Морковь']", 'Картофель Морковь', "'Картофель,Морковь'", 'undefined']}
+  answer={1}
+>
+  Что выведет второй `console.log`?
+
+  ```js
+  function allFoods(...foods) {
+    console.log(foods);
+    console.log(...foods);
+  }
+
+  allFoods('Картофель', 'Морковь');
+  ```
+
+  <Fragment slot="explanation">
+    В параметрах `...foods` — rest: собирает аргументы в массив. В вызове `console.log(...foods)` — spread:
+    раскрывает массив в два отдельных аргумента, и `console.log` выводит их через пробел.
+    Первый `console.log` выведет сам массив.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/rest/no-args" options={['undefined', '[]', 'null', 'TypeError']} answer={1}>
+  Что вернёт вызов?
+
+  ```js
+  function collect(...items) {
+    return items;
+  }
+
+  collect();
+  ```
+
+  <Fragment slot="explanation">
+    Rest-параметр всегда массив. Если аргументов нет, это **пустой массив**, а не `undefined` —
+    поэтому на нём можно сразу вызывать `map`, `join` и другие методы без проверок.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/rest/with-params" options={['[1]', '[]', 'undefined', '1']} answer={1}>
+  Что вернёт вызов?
+
+  ```js
+  function tail(first, ...rest) {
+    return rest;
+  }
+
+  tail(1);
+  ```
+
+  <Fragment slot="explanation">
+    Единственный аргумент `1` достался обычному параметру `first`. Для rest ничего не осталось — он пустой массив.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/rest/function-length" options={['0', '2', '3', 'Infinity']} answer={1}>
+  Чему равно `example.length`?
+
+  ```js
+  function example(a, b, ...rest) {}
+  ```
+
+  <Fragment slot="explanation">
+    `length` функции — количество параметров **до** rest-параметра (и до первого параметра со значением по умолчанию).
+    Rest не учитывается, поэтому `2`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/rest/default-value" options={['items = [] при вызове без аргументов', 'Значение по умолчанию игнорируется', 'SyntaxError']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  function list(...items = []) {
+    return items;
+  }
+  ```
+
+  <Fragment slot="explanation">
+    У rest-параметра не может быть значения по умолчанию — это `SyntaxError`. Оно и не нужно:
+    без аргументов rest и так равен `[]`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/rest/arguments-array" options={['true true', 'true false', 'false true', 'false false']} answer={1}>
+  Что выведет код?
+
+  ```js
+  function check(...rest) {
+    console.log(Array.isArray(rest), Array.isArray(arguments));
+  }
+
+  check(1, 2);
+  ```
+
+  <Fragment slot="explanation">
+    Rest — настоящий массив. `arguments` только похож на массив: у него есть индексы и `length`,
+    но это не `Array` — нет `map`, `filter` и других методов. Превратить его в массив можно через `Array.from(arguments)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/rest/destructuring-empty" options={['undefined', '[]', '[2]', 'SyntaxError']} answer={1}>
+  Чему равно `others`?
+
+  ```js
+  const [a, b, ...others] = [1, 2];
+  ```
+
+  <Fragment slot="explanation">
+    Первые два элемента ушли в `a` и `b`. Для rest ничего не осталось, и он — пустой массив, как и rest-параметр функции.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Самое длинное слово" level="easy">
+  Напишите функцию `longest(...words)`, которая возвращает самое длинное слово из переданных. Без аргументов — пустую строку.
+
+  ```js
+  longest('кот', 'бегемот', 'ёж'); // 'бегемот'
+  longest('да'); // 'да'
+  longest(); // ''
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function longest(...words) {
+      let result = '';
+
+      for (const word of words) {
+        if (word.length > result.length) {
+          result = word;
+        }
+      }
+
+      return result;
+    }
+    ```
+
+    Стартовое значение `''` сразу решает случай без аргументов: цикл не выполнится, и вернётся пустая строка.
+    Через `reduce`: `words.reduce((a, b) => (b.length > a.length ? b : a), '')`.
+  </Fragment>
+</Task>
+
+<Task title="Умножить всё на коэффициент" level="easy">
+  Напишите функцию `scale(factor, ...numbers)`, которая возвращает массив чисел, умноженных на `factor`.
+
+  ```js
+  scale(2, 1, 2, 3); // [2, 4, 6]
+  scale(10, 5); // [50]
+  scale(3); // []
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const scale = (factor, ...numbers) => numbers.map((n) => n * factor);
+    ```
+
+    Первый аргумент попадает в обычный параметр `factor`, остальные — в массив `numbers`.
+    `map` на пустом массиве вернёт пустой массив, так что отдельная проверка не нужна.
+  </Fragment>
+</Task>
+
+<Task title="Избавьтесь от arguments" level="easy">
+  Перепишите функцию на rest-параметр и методы массива, сохранив поведение.
+
+  ```js
+  function joinWords() {
+    let result = '';
+
+    for (let i = 0; i < arguments.length; i++) {
+      result += arguments[i];
+      if (i < arguments.length - 1) {
+        result += ' ';
+      }
+    }
+
+    return result;
+  }
+
+  joinWords('Привет', 'мир'); // 'Привет мир'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const joinWords = (...words) => words.join(' ');
+    ```
+
+    Rest — настоящий массив, поэтому вся ручная склейка с проверкой «не последний ли элемент» заменяется на `join`.
+    Заодно функцию можно сделать стрелочной: у стрелок нет своего `arguments`, а rest работает.
+  </Fragment>
+</Task>
+
+<Task title="Подсчёт по типам" level="medium">
+  Напишите функцию `countTypes(...values)`, которая возвращает объект: сколько аргументов каждого типа передано.
+
+  ```js
+  countTypes(1, 'a', 2, true, 'b', 3);
+  // { number: 3, string: 2, boolean: 1 }
+
+  countTypes(); // {}
+  ```
+
+  <Fragment slot="hint">
+    Тип значения — `typeof value`. Используйте его как ключ объекта-счётчика.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function countTypes(...values) {
+      const counts = {};
+
+      for (const value of values) {
+        const type = typeof value;
+        counts[type] = (counts[type] ?? 0) + 1;
+      }
+
+      return counts;
+    }
+    ```
+
+    `counts[type] ?? 0` — если такого типа ещё не встречалось, берём `0`. Ключи появляются в порядке первого появления типа.
+  </Fragment>
+</Task>
+
+<Task title="Логгер с уровнями" level="medium">
+  Напишите функцию `createLogger(prefix)`, которая возвращает функцию `log(...messages)`.
+  `log` выводит в консоль префикс в квадратных скобках и все сообщения через пробел.
+
+  ```js
+  const apiLog = createLogger('API');
+
+  apiLog('Запрос', '/users', 'выполнен за', 120, 'мс');
+  // [API] Запрос /users выполнен за 120 мс
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function createLogger(prefix) {
+      return (...messages) => {
+        console.log(`[${prefix}]`, ...messages);
+      };
+    }
+    ```
+
+    Rest собирает сообщения в массив, а spread передаёт их в `console.log` отдельными аргументами — поэтому
+    числа и объекты выводятся как есть, а не превращаются в строку. Если бы вместо этого написать
+    `` console.log(`[${prefix}]`, messages) ``, в консоли появился бы массив.
+  </Fragment>
+</Task>
+
+<Task title="Обёртка, которая считает вызовы" level="hard">
+  Напишите функцию `withCallCount(fn)`, которая возвращает обёртку над `fn`. Обёртка передаёт `fn` все аргументы,
+  возвращает её результат и считает вызовы. Количество вызовов доступно через свойство `calls` обёртки.
+
+  ```js
+  const add = (a, b) => a + b;
+  const countedAdd = withCallCount(add);
+
+  countedAdd(2, 3); // 5
+  countedAdd(10, 20); // 30
+  countedAdd.calls; // 2
+  ```
+
+  <Fragment slot="hint">
+    Обёртка принимает `...args` и вызывает `fn(...args)`. Функция в JavaScript — объект, поэтому ей можно
+    добавить свойство: `wrapper.calls = 0`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function withCallCount(fn) {
+      function wrapper(...args) {
+        wrapper.calls++;
+        return fn(...args);
+      }
+
+      wrapper.calls = 0;
+      return wrapper;
+    }
+    ```
+
+    `...args` собирает любые аргументы, поэтому обёртка подходит для функции с любым числом параметров.
+    `fn(...args)` передаёт их без изменений, а `return` возвращает результат — иначе обёртка «съела» бы его.
+  </Fragment>
+</Task>

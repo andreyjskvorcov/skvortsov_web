@@ -1,0 +1,633 @@
+---
+title: Колбэки
+description: Функции обратного вызова — синхронные и асинхронные, события, таймеры, загрузка данных, обработка ошибок и callback hell
+section: js
+order: 13
+level: middle
+tags: [callbacks, async, events, fetch]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+import CallbacksDemo from '@/components/demos/js/CallbacksDemo.astro';
+
+**Колбэк** (callback, функция обратного вызова) — это функция, которую передают в другую функцию, чтобы та
+**вызвала её сама** — сразу или позже, когда что-то произойдёт.
+
+Вы уже пользовались колбэками: функция в `forEach`, `map`, `filter`, `setTimeout` и `addEventListener` — это колбэк.
+
+## Простой пример
+
+```js
+function cookSoup(callback) {
+  console.log('Ставим воду на плиту…');
+
+  setTimeout(() => {
+    console.log('Вода закипела!');
+    const veggies = ['морковь', 'картофель', 'лук'];
+    callback(veggies);
+  }, 2000);
+}
+
+function addVegetables(veggies) {
+  console.log(`Добавляем овощи: ${veggies.join(', ')}.`);
+}
+
+cookSoup(addVegetables);
+// Ставим воду на плиту…
+// (через 2 секунды)
+// Вода закипела!
+// Добавляем овощи: морковь, картофель, лук.
+```
+
+Что здесь происходит:
+
+1. `cookSoup` получает функцию `addVegetables` как обычное значение — в параметр `callback`.
+2. Сама `cookSoup` не знает, **что** будет делать колбэк, — она знает только **когда** его вызвать: когда закипит вода.
+3. Колбэк получает данные аргументом — массив овощей.
+
+Так одну и ту же `cookSoup` можно использовать с разными колбэками: добавить овощи, макароны или просто вывести сообщение.
+
+## Передать функцию, а не вызвать
+
+<Callout type="danger">
+  Передавайте функцию **без скобок**: `cookSoup(addVegetables)`. Со скобками — `cookSoup(addVegetables())` —
+  функция выполнится **сразу**, ещё до `cookSoup`, и без аргумента: здесь она тут же упадёт на `veggies.join`.
+  А если бы и не упала, в `cookSoup` попал бы её результат — `undefined`, и через 2 секунды была бы ошибка
+  `callback is not a function`.
+</Callout>
+
+Если колбэку нужно передать свои аргументы, оберните вызов в стрелочную функцию:
+
+```js
+function greet(name) {
+  console.log(`Привет, ${name}!`);
+}
+
+setTimeout(greet, 1000); // через секунду: 'Привет, undefined!' — setTimeout не передаёт аргументов
+setTimeout(() => greet('Аня'), 1000); // через секунду: 'Привет, Аня!'
+```
+
+## Синхронные и асинхронные колбэки
+
+**Синхронный** колбэк вызывается сразу, пока работает функция, которая его получила. Код после неё ждёт:
+
+```js
+console.log('до');
+[1, 2, 3].forEach((n) => console.log(n));
+console.log('после');
+// до, 1, 2, 3, после
+```
+
+**Асинхронный** колбэк вызывается **позже** — по таймеру, по событию, когда придёт ответ сервера.
+Код после функции продолжает выполняться, не дожидаясь его:
+
+```js
+console.log('до');
+setTimeout(() => console.log('внутри таймера'), 0);
+console.log('после');
+// до, после, внутри таймера
+```
+
+Даже с задержкой `0` колбэк таймера выполнится только **после** всего текущего кода: браузер сначала доделывает
+то, что уже начал, и лишь потом берётся за отложенные задачи.
+
+| Синхронные | Асинхронные |
+|---|---|
+| `forEach`, `map`, `filter`, `find`, `reduce` | `setTimeout`, `setInterval` |
+| функция сравнения в `sort` | `addEventListener` — по событию |
+| колбэки в своих функциях, которые вызываются сразу | `fetch(...).then(...)` — по ответу сервера |
+
+## Что получает колбэк
+
+Функция, которая вызывает колбэк, сама решает, **какие аргументы** ему передать. Например, `map` передаёт
+не только элемент, но и индекс, и весь массив:
+
+```js
+['a', 'b'].map((value, index, array) => `${index}: ${value} из ${array.length}`);
+// ['0: a из 2', '1: b из 2']
+```
+
+Об этом легко забыть — и получить неожиданный результат, если передать функцию с собственными параметрами:
+
+```js
+['1', '2', '3'].map(parseInt); // [1, NaN, NaN]
+```
+
+`parseInt` принимает второй аргумент — систему счисления, и `map` подставляет туда **индекс**: `parseInt('2', 1)` и
+`parseInt('3', 2)` дают `NaN`. Надёжнее явно указать, что передавать: `['1', '2', '3'].map((s) => parseInt(s, 10))`.
+
+## Колбэки событий
+
+Обработчик события — тоже колбэк: браузер вызывает его, когда пользователь нажимает кнопку, вводит текст, прокручивает страницу.
+
+```html
+<button id="startButton">Запустить</button>
+<p id="message"></p>
+```
+
+```js
+const button = document.querySelector('#startButton');
+const message = document.querySelector('#message');
+
+function waitAndShow(callback) {
+  message.textContent = 'Ждём…';
+  button.disabled = true; // защита от повторных нажатий
+
+  setTimeout(() => {
+    callback();
+    button.disabled = false;
+  }, 2000);
+}
+
+function showDone() {
+  message.textContent = 'Готово!';
+}
+
+button.addEventListener('click', () => {
+  waitAndShow(showDone);
+});
+```
+
+Здесь два колбэка: стрелочная функция для `click` и `showDone` для `waitAndShow`. Кнопка блокируется на время ожидания —
+иначе каждое нажатие запускало бы ещё один таймер.
+
+## Загрузка данных
+
+Колбэки удобны для работы с сервером: функция загружает данные, а что с ними делать, решает тот, кто её вызвал.
+Загрузка может закончиться ошибкой, поэтому колбэков обычно два — для успеха и для ошибки.
+
+```html
+<button id="loadPosts">Загрузить посты</button>
+<p id="status"></p>
+<ul id="output"></ul>
+```
+
+```js
+const loadButton = document.getElementById('loadPosts');
+const status = document.getElementById('status');
+const output = document.getElementById('output');
+
+function getPosts(onSuccess, onError) {
+  fetch('https://jsonplaceholder.typicode.com/posts?_limit=3')
+    .then((response) => {
+      if (!response.ok) throw new Error(`Ошибка: код ${response.status}`);
+      return response.json();
+    })
+    .then(onSuccess, onError);
+}
+
+function showPosts(posts) {
+  status.textContent = `Получено постов: ${posts.length}`;
+
+  if (posts.length === 0) {
+    output.textContent = 'Посты не найдены';
+    return;
+  }
+
+  const items = posts.map((post) => {
+    const item = document.createElement('li');
+    const title = document.createElement('h3');
+    const body = document.createElement('p');
+
+    title.textContent = post.title;
+    body.textContent = post.body;
+    item.append(title, body);
+
+    return item;
+  });
+
+  output.replaceChildren(...items);
+}
+
+function showError(error) {
+  status.textContent = `Ошибка загрузки: ${error.message}`;
+}
+
+loadButton.addEventListener('click', () => {
+  status.textContent = 'Загружаем…';
+  getPosts(showPosts, showError);
+});
+```
+
+Попробуйте — это тот же код:
+
+<CallbacksDemo />
+
+Разберём важные места:
+
+- **`getPosts(showPosts, showError)`** — функция загрузки не знает, как показывать посты. Её можно переиспользовать:
+  например, передать колбэк, который считает посты или кладёт их в кэш.
+- **`.then(onSuccess, onError)`** — второй аргумент `then` ловит ошибки **загрузки**: нет сети, сервер ответил ошибкой,
+  пришёл не JSON. Ошибка внутри самого `showPosts` в `onError` не попадёт — и не будет выдана за сетевую.
+- **`textContent` вместо `innerHTML`.** Данные пришли с сервера — им нельзя доверять. Если вставить их в `innerHTML`,
+  строка вида `<img src=x onerror="…">` в заголовке поста выполнит чужой код (XSS). `createElement` + `textContent`
+  выводят текст как текст.
+
+<Callout type="info">
+  `fetch` возвращает **промис**, а `.then` — это способ подписаться на результат колбэком. Промисы и `async/await` —
+  следующий шаг после колбэков: они решают проблемы, о которых ниже.
+</Callout>
+
+### Ошибка внутри колбэка
+
+Частый вариант такого кода — с одним `.catch` в конце:
+
+```js
+fetch(url)
+  .then((response) => response.json())
+  .then((data) => showPosts(data))
+  .catch(() => {
+    status.textContent = 'Ошибка загрузки';
+  });
+```
+
+`.catch` в конце ловит **любую** ошибку в цепочке — в том числе опечатку внутри `showPosts`. Пользователь увидит
+«Ошибка загрузки», хотя данные загрузились, а сломался вывод. Такую ошибку долго ищут в сети, а не в коде.
+Поэтому ошибки загрузки и ошибки отображения лучше разделять — как в `.then(onSuccess, onError)` выше.
+
+## Соглашение «сначала ошибка»
+
+Вместо двух колбэков часто передают один, который первым аргументом получает ошибку, а вторым — результат.
+Это соглашение пришло из Node.js и называется **error-first callback**:
+
+```js
+function divide(a, b, callback) {
+  if (b === 0) {
+    callback(new Error('Деление на ноль'));
+    return;
+  }
+
+  callback(null, a / b);
+}
+
+divide(10, 2, (error, result) => {
+  if (error) {
+    console.log(`Ошибка: ${error.message}`);
+    return;
+  }
+
+  console.log(`Результат: ${result}`); // Результат: 5
+});
+```
+
+`null` на первом месте означает «ошибки нет». Колбэк **сначала** проверяет ошибку — так её невозможно случайно пропустить.
+
+## Callback hell
+
+Когда асинхронные шаги должны идти друг за другом, каждый следующий приходится вкладывать в колбэк предыдущего:
+
+```js
+boilWater(() => {
+  addVegetables(() => {
+    addSalt(() => {
+      cook(10, () => {
+        serve(() => {
+          console.log('Суп готов!');
+        });
+      });
+    });
+  });
+});
+```
+
+Код уходит вправо «пирамидой», а если на каждом шаге добавить обработку ошибок — его станет очень трудно читать.
+Это называют **callback hell** — «ад колбэков».
+
+Что помогает:
+
+- **Именованные функции** вместо вложенных анонимных — каждый шаг описан отдельно, а вложенность уменьшается.
+- **Промисы и `async/await`** — позволяют записать те же шаги последовательно, как обычный код:
+
+```js
+// Так это выглядит с async/await — подробно разберём в теме про промисы
+await boilWater();
+await addVegetables();
+await addSalt();
+await cook(10);
+await serve();
+console.log('Суп готов!');
+```
+
+## Проверь себя
+
+<Quiz client:visible id="js/callbacks/timeout-order" options={['1 2 3', '1 3 2', '2 1 3', '3 2 1']} answer={1}>
+  В каком порядке появятся сообщения?
+
+  ```js
+  console.log('1');
+  setTimeout(() => console.log('2'), 0);
+  console.log('3');
+  ```
+
+  <Fragment slot="explanation">
+    Колбэк `setTimeout` асинхронный: даже с задержкой `0` он выполнится только после всего текущего кода.
+    Поэтому сначала `1` и `3`, потом `2`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/callbacks/sync-foreach" options={['a b c', 'a c b', 'b a c', 'c b a']} answer={0}>
+  В каком порядке появятся сообщения?
+
+  ```js
+  console.log('a');
+  [1].forEach(() => console.log('b'));
+  console.log('c');
+  ```
+
+  <Fragment slot="explanation">
+    Колбэк `forEach` синхронный: он вызывается сразу, пока работает `forEach`, и код после него ждёт завершения.
+    Асинхронным колбэк делают не сами функции, а то, что их вызывает позже — таймер, событие, ответ сервера.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/callbacks/call-vs-pass"
+  options={['Через 2 секунды', 'Сразу, а через 2 секунды ничего не произойдёт', 'Никогда', 'Через 2 секунды, дважды']}
+  answer={1}
+>
+  Когда появится «Готово!»?
+
+  ```js
+  function showDone() {
+    console.log('Готово!');
+  }
+
+  setTimeout(showDone(), 2000);
+  ```
+
+  <Fragment slot="explanation">
+    `showDone()` со скобками — это **вызов**: функция выполняется сразу, а в `setTimeout` передаётся её результат — `undefined`.
+    Таймеру нечего вызывать через 2 секунды (а в Node.js это даже ошибка). Правильно: `setTimeout(showDone, 2000)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/callbacks/map-parseint" options={['[1, 2, 3]', '[1, NaN, NaN]', '[NaN, NaN, NaN]', "['1', '2', '3']"]} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  ['1', '2', '3'].map(parseInt);
+  ```
+
+  <Fragment slot="explanation">
+    `map` вызывает колбэк с тремя аргументами: элемент, индекс, массив. `parseInt` воспринимает второй как систему счисления:
+    `parseInt('1', 0)` — `1` (0 значит «по умолчанию»), `parseInt('2', 1)` и `parseInt('3', 2)` — `NaN`.
+    Решение — явный колбэк: `.map((s) => parseInt(s, 10))` или `.map(Number)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/callbacks/no-args-timeout" options={["'Привет, Аня!'", "'Привет, undefined!'", 'Ошибка', 'Ничего']} answer={1}>
+  Что появится в консоли через секунду?
+
+  ```js
+  function greet(name) {
+    console.log(`Привет, ${name}!`);
+  }
+
+  setTimeout(greet, 1000);
+  ```
+
+  <Fragment slot="explanation">
+    `setTimeout` вызывает колбэк без аргументов, поэтому `name` равен `undefined`.
+    Чтобы передать аргумент, оберните вызов: `setTimeout(() => greet('Аня'), 1000)`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/callbacks/catch-swallows"
+  options={['Посты', "'Ошибка загрузки'", 'Пустую страницу без сообщения', 'Окно с ошибкой браузера']}
+  answer={1}
+>
+  Сервер ответил нормально, но в `showPosts` опечатка — `post.titel.toUpperCase()`. Что увидит пользователь?
+
+  ```js
+  fetch(url)
+    .then((response) => response.json())
+    .then((posts) => showPosts(posts))
+    .catch(() => {
+      status.textContent = 'Ошибка загрузки';
+    });
+  ```
+
+  <Fragment slot="explanation">
+    `post.titel` — `undefined`, и вызов `toUpperCase()` на нём бросает `TypeError`. `.catch` в конце цепочки ловит
+    **любые** ошибки, включая эту, — и показывает «Ошибка загрузки», хотя данные загрузились.
+    Разделяйте обработку: `.then(showPosts, showError)` ловит только ошибки загрузки.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/callbacks/error-first" options={["'Результат: 5'", "'Ошибка: Деление на ноль'", "'Результат: Infinity'", 'Ничего']} answer={1}>
+  Что выведет код?
+
+  ```js
+  function divide(a, b, callback) {
+    if (b === 0) return callback(new Error('Деление на ноль'));
+    callback(null, a / b);
+  }
+
+  divide(5, 0, (error, result) => {
+    if (error) return console.log(`Ошибка: ${error.message}`);
+    console.log(`Результат: ${result}`);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    При `b === 0` колбэк вызывается с ошибкой первым аргументом. Колбэк проверяет её первой и выходит —
+    до вывода результата дело не доходит.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Повторить n раз" level="easy">
+  Напишите функцию `repeat(n, callback)`, которая вызывает `callback` `n` раз и передаёт ему номер вызова, начиная с 1.
+
+  ```js
+  repeat(3, (i) => console.log(`Шаг ${i}`));
+  // Шаг 1
+  // Шаг 2
+  // Шаг 3
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function repeat(n, callback) {
+      for (let i = 1; i <= n; i++) {
+        callback(i);
+      }
+    }
+    ```
+
+    `repeat` отвечает только за то, **сколько раз** вызвать колбэк, а **что** делать на каждом шаге — решает колбэк.
+    Это синхронный колбэк: все вызовы произойдут до того, как `repeat` вернёт управление.
+  </Fragment>
+</Task>
+
+<Task title="Свой map" level="medium">
+  Напишите функцию `myMap(arr, callback)`, которая работает как `arr.map(callback)`: вызывает колбэк для каждого элемента
+  с аргументами `(элемент, индекс, массив)` и возвращает новый массив результатов.
+
+  ```js
+  myMap([1, 2, 3], (n) => n * 2); // [2, 4, 6]
+  myMap(['a', 'b'], (s, i) => `${i}${s}`); // ['0a', '1b']
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function myMap(arr, callback) {
+      const result = [];
+
+      for (let i = 0; i < arr.length; i++) {
+        result.push(callback(arr[i], i, arr));
+      }
+
+      return result;
+    }
+    ```
+
+    Вот и весь секрет `map`: цикл, вызов колбэка и сбор результатов. Колбэк сам решает, какие из трёх аргументов
+    ему нужны, — лишние просто игнорируются.
+  </Fragment>
+</Task>
+
+<Task title="Свой filter" level="medium">
+  Напишите `myFilter(arr, callback)`: возвращает новый массив только из тех элементов, для которых колбэк вернул истинное значение.
+
+  ```js
+  myFilter([1, 2, 3, 4, 5], (n) => n % 2 === 0); // [2, 4]
+  myFilter(['кот', 'слон', 'ёж'], (word) => word.length <= 3); // ['кот', 'ёж']
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function myFilter(arr, callback) {
+      const result = [];
+
+      for (let i = 0; i < arr.length; i++) {
+        if (callback(arr[i], i, arr)) {
+          result.push(arr[i]);
+        }
+      }
+
+      return result;
+    }
+    ```
+
+    Отличие от `myMap` — в массив попадает не результат колбэка, а **сам элемент**, и только если колбэк вернул истинное значение.
+  </Fragment>
+</Task>
+
+<Task title="Возраст с error-first" level="easy">
+  Напишите функцию `parseAge(input, callback)`: если строка `input` — целое число от 0 до 150,
+  вызовите `callback(null, число)`, иначе — `callback(new Error('Некорректный возраст'))`. Пустая строка — тоже ошибка.
+
+  ```js
+  parseAge('25', (error, age) => console.log(error ? error.message : age)); // 25
+  parseAge('abc', (error, age) => console.log(error ? error.message : age)); // Некорректный возраст
+  parseAge('200', (error, age) => console.log(error ? error.message : age)); // Некорректный возраст
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function parseAge(input, callback) {
+      const age = Number(input);
+
+      if (input.trim() === '' || !Number.isInteger(age) || age < 0 || age > 150) {
+        callback(new Error('Некорректный возраст'));
+        return;
+      }
+
+      callback(null, age);
+    }
+    ```
+
+    Проверка `input.trim() === ''` нужна, потому что `Number('')` и `Number('  ')` — это `0`, и пустое поле прошло бы как возраст 0.
+    `return` после вызова с ошибкой обязателен — без него колбэк вызвался бы второй раз, уже с «успешным» результатом.
+    Колбэк, который вызывается дважды, — одна из самых неприятных ошибок в коде на колбэках.
+  </Fragment>
+</Task>
+
+<Task title="Загрузка пользователя" level="medium">
+  Напишите функцию `loadUser(id, onSuccess, onError)`, которая имитирует запрос к серверу: через 500 мс ищет пользователя
+  в массиве и вызывает `onSuccess(user)` или `onError(new Error(...))`, если такого `id` нет.
+
+  ```js
+  const users = [
+    { id: 1, name: 'Аня' },
+    { id: 2, name: 'Иван' },
+  ];
+
+  loadUser(1, (user) => console.log(user.name), (error) => console.log(error.message)); // через 0.5 с: Аня
+  loadUser(5, (user) => console.log(user.name), (error) => console.log(error.message)); // через 0.5 с: Пользователь 5 не найден
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function loadUser(id, onSuccess, onError) {
+      setTimeout(() => {
+        const user = users.find((u) => u.id === id);
+
+        if (user) {
+          onSuccess(user);
+        } else {
+          onError(new Error(`Пользователь ${id} не найден`));
+        }
+      }, 500);
+    }
+    ```
+
+    `setTimeout` делает колбэки асинхронными, как у настоящего запроса: код после `loadUser` выполнится раньше,
+    чем придёт «ответ». Вызывается ровно один из двух колбэков.
+  </Fragment>
+</Task>
+
+<Task title="Распутайте пирамиду" level="hard">
+  Даны асинхронные шаги, каждый принимает колбэк, который вызывается, когда шаг выполнен.
+  Напишите функцию `runSteps(steps, onDone)`, которая выполняет массив таких шагов **по очереди** и вызывает `onDone`,
+  когда закончился последний, — без ручной вложенности.
+
+  ```js
+  const step = (name) => (next) => {
+    setTimeout(() => {
+      console.log(name);
+      next();
+    }, 300);
+  };
+
+  runSteps([step('Вскипятить воду'), step('Добавить овощи'), step('Посолить')], () => {
+    console.log('Суп готов!');
+  });
+  // Вскипятить воду → Добавить овощи → Посолить → Суп готов!
+  ```
+
+  <Fragment slot="hint">
+    Заведите счётчик текущего шага и функцию `next`, которая запускает шаг по счётчику и передаёт ему саму себя как колбэк.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function runSteps(steps, onDone) {
+      let index = 0;
+
+      function next() {
+        if (index === steps.length) {
+          onDone();
+          return;
+        }
+
+        const currentStep = steps[index];
+        index++;
+        currentStep(next);
+      }
+
+      next();
+    }
+    ```
+
+    Каждый шаг получает `next` как колбэк и вызывает его, когда закончил. `next` берёт следующий шаг по счётчику —
+    вложенность больше не растёт, сколько бы шагов ни было. Примерно так работали библиотеки до появления промисов.
+  </Fragment>
+</Task>

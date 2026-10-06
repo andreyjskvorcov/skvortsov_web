@@ -1,0 +1,697 @@
+---
+title: Массивы
+description: Создание и изменение массивов, push/pop/splice, поиск, перебор, map/filter/reduce, сортировка и копирование
+section: js
+order: 10
+level: beginner
+tags: [arrays, methods, iteration]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Массив** — упорядоченный список значений. Если в переменной `fruit` лежит одно значение, то в массиве `fruits`
+их может быть сколько угодно, и у каждого есть порядковый номер — **индекс**.
+
+## Создание и доступ к элементам
+
+```js
+const fruit = 'Яблоко'; // одно значение
+const fruits = ['Киви', 'Кокос', 'Банан']; // список значений
+
+const empty = []; // пустой массив
+const mixed = [1, 'два', true, null, { id: 3 }, [4, 5]]; // элементы могут быть любыми
+```
+
+Индексы начинаются с **нуля**:
+
+```js
+fruits[0]; // 'Киви'
+fruits[1]; // 'Кокос'
+fruits[2]; // 'Банан'
+fruits[3]; // undefined — такого элемента нет, но и ошибки тоже нет
+
+fruits.at(-1); // 'Банан' — at с отрицательным индексом считает с конца
+fruits[fruits.length - 1]; // 'Банан' — то же самое, классический способ
+```
+
+Элемент можно заменить, обратившись к нему по индексу:
+
+```js
+fruits[2] = 'Ананас';
+console.log(fruits); // ['Киви', 'Кокос', 'Ананас']
+```
+
+### Длина массива
+
+`length` — количество элементов. Последний индекс всегда на единицу меньше длины:
+
+```js
+console.log(`Длина массива: ${fruits.length}`); // Длина массива: 3
+```
+
+<Callout type="info">
+  Массив в `const` можно менять — добавлять, удалять и заменять элементы. `const` запрещает только
+  переприсвоить саму переменную: `fruits = []` — ошибка.
+</Callout>
+
+## Добавление и удаление
+
+| Метод | Что делает | Возвращает |
+|---|---|---|
+| `push(x)` | добавляет в **конец** | новую длину |
+| `pop()` | удаляет из **конца** | удалённый элемент |
+| `unshift(x)` | добавляет в **начало** | новую длину |
+| `shift()` | удаляет из **начала** | удалённый элемент |
+
+```js
+const fruits = ['Киви', 'Кокос', 'Ананас'];
+
+fruits.push('Банан'); // ['Киви', 'Кокос', 'Ананас', 'Банан']
+fruits.unshift('Груша'); // ['Груша', 'Киви', 'Кокос', 'Ананас', 'Банан']
+
+const last = fruits.pop(); // last = 'Банан'
+const first = fruits.shift(); // first = 'Груша'
+
+console.log(fruits); // ['Киви', 'Кокос', 'Ананас']
+```
+
+### splice — вставка и удаление в середине
+
+`splice(start, deleteCount, ...items)` удаляет `deleteCount` элементов начиная с `start` и вставляет на их место новые.
+Возвращает массив удалённых элементов.
+
+```js
+const colors = ['красный', 'зелёный', 'синий', 'жёлтый'];
+
+colors.splice(1, 2); // удалить 2 элемента с индекса 1 → вернёт ['зелёный', 'синий']
+console.log(colors); // ['красный', 'жёлтый']
+
+colors.splice(1, 0, 'белый', 'чёрный'); // ничего не удалять, вставить на индекс 1
+console.log(colors); // ['красный', 'белый', 'чёрный', 'жёлтый']
+```
+
+### slice — копия части массива
+
+`slice(start, end)` возвращает **новый** массив с элементами от `start` до `end` (не включая `end`), исходный не меняется:
+
+```js
+const letters = ['a', 'b', 'c', 'd', 'e'];
+
+letters.slice(1, 3); // ['b', 'c']
+letters.slice(2); // ['c', 'd', 'e'] — до конца
+letters.slice(-2); // ['d', 'e'] — два последних
+letters.slice(); // копия всего массива
+```
+
+<Callout type="warning">
+  Не путайте `splice` и `slice`: **`splice` меняет** исходный массив, **`slice` — нет**.
+</Callout>
+
+## Поиск
+
+```js
+const fruits = ['Киви', 'Кокос', 'Ананас', 'Банан'];
+
+fruits.indexOf('Кокос'); // 1 — индекс первого совпадения
+fruits.indexOf('Манго'); // -1 — не найдено
+fruits.includes('Банан'); // true — есть ли элемент
+
+const users = [
+  { id: 1, name: 'Аня', age: 25 },
+  { id: 2, name: 'Иван', age: 17 },
+  { id: 3, name: 'Олег', age: 32 },
+];
+
+users.find((user) => user.age >= 18); // { id: 1, name: 'Аня', age: 25 } — первый подходящий
+users.findIndex((user) => user.name === 'Иван'); // 1
+users.find((user) => user.age > 100); // undefined — никто не подошёл
+```
+
+`indexOf` и `includes` сравнивают элементы через `===`, поэтому объекты ими не найти — для этого есть `find` и `findIndex`,
+которые принимают функцию-условие.
+
+<Callout type="danger">
+  Не проверяйте наличие элемента через `if (arr.indexOf(x))`. Для первого элемента `indexOf` вернёт `0` — ложное значение,
+  и условие не сработает, а для отсутствующего вернёт `-1` — истинное. Используйте `arr.includes(x)`
+  или `arr.indexOf(x) !== -1`.
+</Callout>
+
+## Перебор
+
+Перебрать массив можно по-разному — подробнее про циклы в уроке [Цикл for](/learn/js/for-loop).
+
+```js
+const fruits = ['Киви', 'Кокос', 'Ананас', 'Банан'];
+
+// for — когда нужен индекс и полный контроль
+for (let i = 0; i < fruits.length; i++) {
+  console.log(`${i}. ${fruits[i]}`);
+}
+
+// for...of — просто значения
+for (const fruit of fruits) {
+  console.log(fruit);
+}
+
+// for...of + entries() — значения и индексы
+for (const [i, fruit] of fruits.entries()) {
+  console.log(`${i}. ${fruit}`);
+}
+
+// forEach — вызывает функцию для каждого элемента
+fruits.forEach((fruit, i) => {
+  console.log(`${i + 1}. ${fruit}`);
+});
+```
+
+`fruits.entries()` возвращает не массив, а **итератор** — его перебирают в `for...of`.
+Поэтому `console.log(fruits.entries())` выведет `Object [Array Iterator] {}`, а не пары. Чтобы увидеть пары,
+превратите его в массив: `[...fruits.entries()]` → `[[0, 'Киви'], [1, 'Кокос'], …]`.
+
+<Callout type="info">
+  Из `forEach` нельзя выйти досрочно — `break` в нём не работает, а `return` только завершает текущий вызов функции.
+  Если нужно остановиться на середине, используйте `for` или `for...of`.
+</Callout>
+
+### Чётные и нечётные позиции
+
+```js
+fruits.forEach((fruit, i) => {
+  const position = i + 1; // «человеческий» номер: с 1, а не с 0
+
+  if (position % 2 === 0) {
+    console.log(`Чётная позиция ${position}: ${fruit}`);
+  } else {
+    console.log(`Нечётная позиция ${position}: ${fruit}`);
+  }
+});
+// Нечётная позиция 1: Киви
+// Чётная позиция 2: Кокос
+// Нечётная позиция 3: Ананас
+// Чётная позиция 4: Банан
+```
+
+Обратите внимание: элемент с **чётным номером** стоит на **нечётном индексе** — `Кокос` второй по счёту, но его индекс `1`.
+Отдельная переменная `position` избавляет от путаницы.
+
+## map, filter, reduce
+
+Эти методы **не меняют** исходный массив, а возвращают новый результат — и используются в современном коде постоянно.
+
+### map — преобразовать каждый элемент
+
+```js
+const prices = [100, 250, 400];
+
+const withTax = prices.map((price) => price * 1.2); // [120, 300, 480]
+const labels = prices.map((price, i) => `${i + 1}) ${price} ₽`); // ['1) 100 ₽', '2) 250 ₽', '3) 400 ₽']
+```
+
+Длина результата всегда равна длине исходного массива.
+
+### filter — оставить подходящие
+
+```js
+const numbers = [5, 12, 8, 130, 44];
+
+numbers.filter((n) => n > 10); // [12, 130, 44]
+users.filter((user) => user.age >= 18).length; // 2 — сколько совершеннолетних
+```
+
+### reduce — свести к одному значению
+
+`reduce` проходит по массиву и накапливает результат. Первый аргумент — функция `(накопитель, элемент) => новыйНакопитель`,
+второй — начальное значение накопителя.
+
+```js
+const cart = [1200, 350, 800];
+
+const total = cart.reduce((sum, price) => sum + price, 0); // 2350
+// шаги: 0 + 1200 = 1200 → 1200 + 350 = 1550 → 1550 + 800 = 2350
+```
+
+### some и every
+
+```js
+const ages = [25, 17, 32];
+
+ages.some((age) => age < 18); // true — есть хотя бы один несовершеннолетний
+ages.every((age) => age >= 18); // false — не все совершеннолетние
+```
+
+### Цепочки методов
+
+Методы, которые возвращают массив, можно вызывать друг за другом:
+
+```js
+const products = [
+  { name: 'Ноутбук', price: 85000, inStock: true },
+  { name: 'Мышь', price: 1500, inStock: false },
+  { name: 'Клавиатура', price: 4500, inStock: true },
+];
+
+const available = products
+  .filter((p) => p.inStock)
+  .map((p) => `${p.name} — ${p.price} ₽`);
+// ['Ноутбук — 85000 ₽', 'Клавиатура — 4500 ₽']
+```
+
+<Callout type="tip">
+  `forEach` ничего не возвращает (`undefined`), поэтому его результат нельзя сохранить или продолжить цепочку.
+  Если нужен новый массив — используйте `map` или `filter`, а не `forEach` с `push` во внешний массив.
+</Callout>
+
+## Разворот и сортировка
+
+### reverse и sort меняют массив
+
+`reverse()` и `sort()` переставляют элементы **в самом массиве** и возвращают ссылку на него же:
+
+```js
+const fruits = ['Киви', 'Кокос', 'Ананас', 'Банан'];
+
+fruits.reverse();
+console.log(fruits); // ['Банан', 'Ананас', 'Кокос', 'Киви'] — исходный массив изменился
+```
+
+Это легко упустить: весь код ниже будет работать уже с развёрнутым массивом. Если исходный порядок ещё нужен,
+используйте версии, которые возвращают **новый** массив:
+
+```js
+const original = ['Киви', 'Кокос', 'Ананас', 'Банан'];
+
+const reversed = original.toReversed(); // ['Банан', 'Ананас', 'Кокос', 'Киви']
+const sorted = original.toSorted(); // ['Ананас', 'Банан', 'Киви', 'Кокос']
+
+console.log(original); // ['Киви', 'Кокос', 'Ананас', 'Банан'] — не изменился
+```
+
+`toReversed` и `toSorted` появились в 2023 году. В старом коде вместо них делают копию: `[...original].reverse()`.
+
+Пройти массив с конца можно и без разворота — просто идите по индексам в обратном порядке:
+
+```js
+for (let i = original.length - 1; i >= 0; i--) {
+  console.log(`${i + 1}. ${original[i]}`);
+}
+```
+
+### Сортировка строк
+
+```js
+const newFruits = ['Киви', 'Яблоко', 'Кокос', 'Банан'];
+
+newFruits.sort(); // ['Банан', 'Киви', 'Кокос', 'Яблоко'] — по алфавиту
+newFruits.sort().reverse(); // ['Яблоко', 'Кокос', 'Киви', 'Банан'] — в обратном порядке
+```
+
+По умолчанию `sort` сравнивает коды символов. Для русского языка это почти всегда совпадает с алфавитом,
+но с исключениями: строчная `ё` окажется после `я`, заглавная `Ё` — вообще раньше `А`, а все заглавные буквы — раньше строчных.
+Правильно — через `localeCompare`:
+
+```js
+const words = ['ёж', 'яблоко', 'Арбуз', 'банан'];
+
+words.toSorted(); // ['Арбуз', 'банан', 'яблоко', 'ёж'] — ё в конце
+words.toSorted((a, b) => a.localeCompare(b)); // ['Арбуз', 'банан', 'ёж', 'яблоко']
+```
+
+### Сортировка чисел
+
+<Callout type="danger">
+  Без функции сравнения `sort` превращает числа в строки: `[10, 9, 1].sort()` даёт `[1, 10, 9]`.
+  Для чисел всегда передавайте функцию: `(a, b) => a - b` — по возрастанию, `(a, b) => b - a` — по убыванию.
+</Callout>
+
+```js
+const scores = [40, 100, 1, 5, 25];
+
+scores.toSorted((a, b) => a - b); // [1, 5, 25, 40, 100]
+scores.toSorted((a, b) => b - a); // [100, 40, 25, 5, 1]
+
+// Массив объектов — по полю
+products.toSorted((a, b) => a.price - b.price).map((p) => p.name); // ['Мышь', 'Клавиатура', 'Ноутбук']
+```
+
+Функция сравнения возвращает отрицательное число, если `a` должен идти раньше `b`, положительное — если позже, и `0`, если порядок не важен.
+
+## Копирование и объединение
+
+Массивы, как и объекты, хранятся **по ссылке**:
+
+```js
+const original = [1, 2, 3];
+const sameArray = original; // не копия, а вторая ссылка
+sameArray.push(4);
+console.log(original); // [1, 2, 3, 4] — изменился и исходный
+```
+
+Чтобы получить отдельную копию:
+
+```js
+const copy = [...original]; // spread
+const copy2 = original.slice(); // slice без аргументов
+
+const merged = [...[1, 2], ...[3, 4]]; // [1, 2, 3, 4] — объединение
+const merged2 = [1, 2].concat([3, 4]); // [1, 2, 3, 4]
+```
+
+Это **поверхностные** копии: если внутри массива объекты, копируются ссылки на них. Подробнее — в уроке [Объекты](/learn/js/objects).
+
+## Полезное
+
+```js
+Array.isArray([1, 2]); // true — typeof для массива вернёт 'object', поэтому проверяют так
+['a', 'b', 'c'].join(', '); // 'a, b, c' — массив в строку
+'a,b,c'.split(','); // ['a', 'b', 'c'] — строку в массив
+Array.from({ length: 3 }, (_, i) => i * 10); // [0, 10, 20] — массив заданной длины
+
+const [first, second, ...rest] = [10, 20, 30, 40]; // деструктуризация: first = 10, second = 20, rest = [30, 40]
+```
+
+`_` в `(_, i) => …` — соглашение для параметра, который не используется: функции нужен только второй аргумент, индекс.
+
+### Меняет или нет
+
+| Меняют исходный массив | Возвращают новый результат |
+|---|---|
+| `push`, `pop`, `unshift`, `shift` | `slice`, `concat`, `[...arr]` |
+| `splice` | `map`, `filter`, `reduce` |
+| `reverse`, `sort` | `toReversed`, `toSorted`, `toSpliced` |
+| `fill`, присваивание `arr[i] = x` | `join`, `find`, `includes`, `indexOf` |
+
+## Проверь себя
+
+<Quiz client:visible id="js/arrays/out-of-range" options={["'Банан'", 'undefined', 'null', 'RangeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const fruits = ['Киви', 'Кокос', 'Банан'];
+  console.log(fruits[3]);
+  ```
+
+  <Fragment slot="explanation">
+    Индексы трёх элементов — `0`, `1` и `2`. Обращение к несуществующему индексу не ошибка, а `undefined`.
+    Последний элемент — `fruits[fruits.length - 1]` или `fruits.at(-1)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/arrays/push-returns" options={["'Банан'", '3', '4', 'undefined']} answer={2}>
+  Что выведет код?
+
+  ```js
+  const fruits = ['Киви', 'Кокос', 'Ананас'];
+  const result = fruits.push('Банан');
+  console.log(result);
+  ```
+
+  <Fragment slot="explanation">
+    `push` возвращает **новую длину** массива, а не добавленный элемент и не сам массив. После добавления элементов стало 4.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/arrays/reverse-mutates" options={['[1, 2, 3]', '[3, 2, 1]', 'undefined']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const a = [1, 2, 3];
+  const b = a.reverse();
+  console.log(a);
+  ```
+
+  <Fragment slot="explanation">
+    `reverse` разворачивает **сам** массив и возвращает ссылку на него же: `a` и `b` — один и тот же развёрнутый массив.
+    Чтобы не трогать исходный, используйте `a.toReversed()` или `[...a].reverse()`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/arrays/indexof-zero" options={["'Есть киви'", "'Киви нет'", 'Ошибка']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const fruits = ['Киви', 'Кокос'];
+
+  if (fruits.indexOf('Киви')) {
+    console.log('Есть киви');
+  } else {
+    console.log('Киви нет');
+  }
+  ```
+
+  <Fragment slot="explanation">
+    `'Киви'` — первый элемент, `indexOf` возвращает `0`, а `0` в условии ложно. Получается «Киви нет», хотя он есть.
+    Проверяйте наличие через `fruits.includes('Киви')`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/arrays/sort-numbers" options={['[1, 9, 10]', '[1, 10, 9]', '[10, 9, 1]', '[9, 10, 1]']} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  [10, 9, 1].sort();
+  ```
+
+  <Fragment slot="explanation">
+    Без функции сравнения элементы сравниваются как строки: `'1'` < `'10'` < `'9'`, потому что `'1'` < `'9'` уже по первому символу.
+    Для чисел нужно `.sort((a, b) => a - b)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/arrays/foreach-returns" options={['[2, 4, 6]', '[1, 2, 3]', 'undefined', '6']} answer={2}>
+  Что выведет код?
+
+  ```js
+  const result = [1, 2, 3].forEach((n) => n * 2);
+  console.log(result);
+  ```
+
+  <Fragment slot="explanation">
+    `forEach` только вызывает функцию для каждого элемента и всегда возвращает `undefined` — значения из колбэка теряются.
+    Чтобы получить новый массив `[2, 4, 6]`, нужен `map`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/arrays/splice-vs-slice" options={["['b', 'c'] и ['a', 'd']", "['b', 'c'] и ['a', 'b', 'c', 'd']", "['b'] и ['a', 'c', 'd']", "['a', 'd'] и ['b', 'c']"]} answer={0}>
+  Что выведет код?
+
+  ```js
+  const letters = ['a', 'b', 'c', 'd'];
+  const removed = letters.splice(1, 2);
+  console.log(removed, letters);
+  ```
+
+  <Fragment slot="explanation">
+    `splice(1, 2)` удаляет 2 элемента начиная с индекса 1 — `'b'` и `'c'` — и возвращает их массивом.
+    Исходный массив изменился: в нём остались `'a'` и `'d'`. `slice(1, 3)` вернул бы те же `['b', 'c']`, но не тронул бы `letters`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/arrays/reference" options={['[1, 2]', '[1, 2, 3]', 'undefined']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const original = [1, 2];
+  const copy = original;
+  copy.push(3);
+  console.log(original);
+  ```
+
+  <Fragment slot="explanation">
+    `copy = original` не копирует массив — обе переменные ссылаются на один и тот же массив. Настоящая копия — `[...original]`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Список покупок" level="easy">
+  Начните со списка `['Хлеб', 'Молоко']` и с помощью методов массива:
+
+  1. добавьте `'Сыр'` в конец;
+  2. добавьте `'Яйца'` в начало;
+  3. удалите последний элемент и выведите, что удалили;
+  4. замените `'Молоко'` на `'Кефир'`, найдя его индекс.
+
+  В итоге должно получиться `['Яйца', 'Хлеб', 'Кефир']`.
+
+  <Fragment slot="solution">
+    ```js
+    const list = ['Хлеб', 'Молоко'];
+
+    list.push('Сыр'); // ['Хлеб', 'Молоко', 'Сыр']
+    list.unshift('Яйца'); // ['Яйца', 'Хлеб', 'Молоко', 'Сыр']
+
+    const removed = list.pop();
+    console.log(`Удалили: ${removed}`); // Удалили: Сыр
+
+    const index = list.indexOf('Молоко');
+    if (index !== -1) {
+      list[index] = 'Кефир';
+    }
+
+    console.log(list); // ['Яйца', 'Хлеб', 'Кефир']
+    ```
+
+    Проверка `index !== -1` защищает от записи в `list[-1]`, если элемента нет.
+  </Fragment>
+</Task>
+
+<Task title="Сколько раз встречается" level="easy">
+  Напишите функцию `countOccurrences(arr, value)`, которая возвращает, сколько раз `value` встречается в массиве.
+
+  ```js
+  countOccurrences(['a', 'b', 'a', 'c', 'a'], 'a'); // 3
+  countOccurrences([1, 2, 3], 5); // 0
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const countOccurrences = (arr, value) => arr.filter((item) => item === value).length;
+    ```
+
+    `filter` оставляет только совпадения, а `length` их считает. Тот же результат через `reduce`:
+    `arr.reduce((count, item) => (item === value ? count + 1 : count), 0)` — без промежуточного массива.
+  </Fragment>
+</Task>
+
+<Task title="Без повторов" level="easy">
+  Напишите функцию `unique(arr)`, которая возвращает новый массив без повторяющихся значений, сохраняя порядок.
+
+  ```js
+  unique([1, 2, 2, 3, 1, 4]); // [1, 2, 3, 4]
+  unique(['кот', 'пёс', 'кот']); // ['кот', 'пёс']
+  ```
+
+  <Fragment slot="hint">
+    Элемент встречается впервые, если его `indexOf` совпадает с текущим индексом. Или посмотрите на `Set`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const unique = (arr) => arr.filter((item, index) => arr.indexOf(item) === index);
+    ```
+
+    `indexOf` находит **первое** вхождение. Если оно совпадает с текущим индексом — элемент встречается впервые, оставляем его.
+
+    Короче и быстрее для больших массивов — через `Set`, который хранит только уникальные значения:
+    `const unique = (arr) => [...new Set(arr)];`.
+  </Fragment>
+</Task>
+
+<Task title="Сумма и среднее" level="easy">
+  С помощью `reduce` напишите функцию `stats(numbers)`, которая возвращает объект с суммой и средним значением.
+  Для пустого массива среднее — `0`.
+
+  ```js
+  stats([4, 8, 15, 16, 23, 42]); // { sum: 108, average: 18 }
+  stats([]); // { sum: 0, average: 0 }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function stats(numbers) {
+      const sum = numbers.reduce((total, n) => total + n, 0);
+      const average = numbers.length > 0 ? sum / numbers.length : 0;
+
+      return { sum, average };
+    }
+    ```
+
+    Начальное значение `0` в `reduce` обязательно: без него на пустом массиве `reduce` бросит `TypeError`.
+    Проверка длины защищает от `0 / 0`, то есть `NaN`.
+  </Fragment>
+</Task>
+
+<Task title="Сортировка товаров" level="medium">
+  Дан массив товаров. Не меняя исходный массив, получите:
+
+  1. названия товаров от самого дешёвого к самому дорогому;
+  2. названия по алфавиту.
+
+  ```js
+  const products = [
+    { name: 'Ёлка', price: 2500 },
+    { name: 'Арбуз', price: 300 },
+    { name: 'Яблоки', price: 150 },
+    { name: 'Груши', price: 200 },
+  ];
+
+  // 1. ['Яблоки', 'Груши', 'Арбуз', 'Ёлка']
+  // 2. ['Арбуз', 'Груши', 'Ёлка', 'Яблоки']
+  ```
+
+  <Fragment slot="hint">
+    `toSorted` не трогает исходный массив. Для цены — разность, для строк — `localeCompare`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const byPrice = products.toSorted((a, b) => a.price - b.price).map((p) => p.name);
+    const byName = products.toSorted((a, b) => a.name.localeCompare(b.name)).map((p) => p.name);
+    ```
+
+    Обычное сравнение строк поставило бы `'Ёлка'` **первой** — код заглавной `Ё` (U+0401) меньше, чем у `А` (U+0410).
+    `localeCompare` сравнивает по правилам языка, и `Ё` встаёт на своё место — после `Е`.
+  </Fragment>
+</Task>
+
+<Task title="Удалить без изменения" level="medium">
+  Напишите функцию `without(arr, value)`, которая возвращает **новый** массив без всех вхождений `value`.
+  Исходный массив меняться не должен.
+
+  ```js
+  const fruits = ['Киви', 'Банан', 'Киви', 'Манго'];
+
+  without(fruits, 'Киви'); // ['Банан', 'Манго']
+  console.log(fruits); // ['Киви', 'Банан', 'Киви', 'Манго'] — без изменений
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const without = (arr, value) => arr.filter((item) => item !== value);
+    ```
+
+    `filter` всегда создаёт новый массив. Вариант со `splice` изменил бы исходный массив и удалил бы только одно вхождение
+    за вызов — его пришлось бы вызывать в цикле, аккуратно следя за сдвигом индексов.
+  </Fragment>
+</Task>
+
+<Task title="Отчёт по заказам" level="hard">
+  Дан список заказов. Получите строку с названиями **оплаченных** заказов дороже 1000 ₽, отсортированных по убыванию суммы,
+  и общую сумму этих заказов.
+
+  ```js
+  const orders = [
+    { id: 1, title: 'Наушники', total: 3500, paid: true },
+    { id: 2, title: 'Чехол', total: 700, paid: true },
+    { id: 3, title: 'Монитор', total: 18000, paid: false },
+    { id: 4, title: 'Клавиатура', total: 4200, paid: true },
+    { id: 5, title: 'Кабель', total: 1200, paid: true },
+  ];
+
+  // 'Клавиатура, Наушники, Кабель — итого 8900 ₽'
+  ```
+
+  <Fragment slot="hint">
+    Сначала `filter` по двум условиям, затем `toSorted` по убыванию, затем `map` в названия и `join`.
+    Сумму посчитайте через `reduce` по отфильтрованному массиву.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const selected = orders
+      .filter((order) => order.paid && order.total > 1000)
+      .toSorted((a, b) => b.total - a.total);
+
+    const titles = selected.map((order) => order.title).join(', ');
+    const sum = selected.reduce((total, order) => total + order.total, 0);
+
+    console.log(`${titles} — итого ${sum} ₽`); // Клавиатура, Наушники, Кабель — итого 8900 ₽
+    ```
+
+    Отфильтрованный и отсортированный массив сохранён в `selected` — из него берутся и названия, и сумма,
+    без повторной фильтрации. После `filter` уже получен новый массив, поэтому вместо `toSorted` здесь можно было бы
+    использовать и `sort`: исходный `orders` он не затронет.
+  </Fragment>
+</Task>

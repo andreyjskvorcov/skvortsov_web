@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '@/layouts/BaseLayout.astro';
+import BackToTop from '@/components/blocks/BackToTop.astro';
 // Единственный источник — GUIDE.md в корне проекта: его же читают в IDE и в репозитории
 import * as guide from '../../GUIDE.md';
 
@@ -44,4 +45,5 @@ const html = (await guide.compiledContent())
       />
     </article>
   </div>
+  <BackToTop />
 </BaseLayout>
