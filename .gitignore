@@ -21,3 +21,8 @@ npm-debug.log*
 
 # built standalone apps (npm run build:apps)
 public/apps/
+
+# личные книги (private: true) — только локально, не публикуются
+books-private/
+# PDF кладутся в public/books/ или books-private/, а не рядом с описаниями
+src/content/books/*.pdf

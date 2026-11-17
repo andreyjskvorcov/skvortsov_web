@@ -1,0 +1,669 @@
+---
+title: Ключевое слово this
+description: Чему равен this — в глобальном коде, функциях, методах, конструкторах, обработчиках событий и стрелочных функциях; call, apply и bind
+section: js
+order: 19
+level: middle
+tags: [this, functions, objects]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+`this` — специальное слово, которое внутри функции указывает на **объект, в контексте которого она вызвана**.
+Главное правило, которое объясняет почти всё:
+
+> `this` определяется не тем, **где функция написана**, а тем, **как её вызвали**.
+
+Одна и та же функция может получить разный `this` при разных вызовах. Исключение — стрелочные функции:
+у них своего `this` нет вообще. Разберём все случаи по очереди.
+
+## 1. Глобальный контекст
+
+Вне функций `this` зависит от среды, в которой выполняется код:
+
+```js
+console.log(this);
+```
+
+| Где выполняется код | Чему равен `this` на верхнем уровне |
+|---|---|
+| Обычный `<script>` в браузере | `window` — глобальный объект браузера |
+| Модуль в браузере (`<script type="module">`) | `undefined` |
+| Обычный файл Node.js (CommonJS) | `module.exports` — пустой объект `{}` |
+| ES-модуль в Node.js (`.mjs` или `"type": "module"`) | `undefined` |
+
+```js
+// В обычном скрипте браузера
+console.log(this === window); // true
+```
+
+<Callout type="tip">
+  Чтобы обратиться к глобальному объекту в любой среде, не используйте `this` — для этого есть `globalThis`.
+  В браузере это `window`, в Node.js — `global`.
+</Callout>
+
+## 2. В обычной функции
+
+Если функцию вызвать просто по имени — не как метод и не через `new`, — `this` зависит от режима:
+
+```js
+function showThis() {
+  console.log(this);
+}
+
+showThis(); // нестрогий режим: window (глобальный объект)
+```
+
+```js
+'use strict';
+
+function showThis() {
+  console.log(this);
+}
+
+showThis(); // строгий режим: undefined
+```
+
+В строгом режиме `this` при обычном вызове — `undefined`. Модули и классы **всегда** работают в строгом режиме,
+поэтому в современном коде ожидайте именно `undefined`.
+
+<Callout type="info">
+  Нестрогий режим «подставлял» глобальный объект, и функция могла случайно создать или изменить глобальные переменные
+  через `this.что-то = …`. Строгий режим это исправил: ошибка видна сразу.
+</Callout>
+
+## 3. В методах объекта
+
+Если функцию вызвали **через точку** — `obj.method()`, — `this` равен объекту **слева от точки**:
+
+```js
+const user = {
+  name: 'Алексей',
+  greet() {
+    console.log(`Привет, меня зовут ${this.name}`);
+  },
+};
+
+user.greet(); // 'Привет, меня зовут Алексей'
+```
+
+Метод не «привязан» к объекту навсегда. Важно только, через что его вызвали:
+
+```js
+const admin = { name: 'Мария' };
+admin.greet = user.greet; // та же функция в другом объекте
+
+admin.greet(); // 'Привет, меня зовут Мария' — this теперь admin
+```
+
+### Потеря контекста
+
+Если достать метод из объекта и вызвать отдельно, точки слева больше нет — и `this` теряется:
+
+```js
+const greet = user.greet;
+greet(); // TypeError: Cannot read properties of undefined (reading 'name') — в строгом режиме this = undefined
+```
+
+Чаще всего это случается незаметно — когда метод передают как колбэк:
+
+```js
+setTimeout(user.greet, 1000); // через секунду: 'Привет, меня зовут ' — метод вызван без user
+button.addEventListener('click', user.greet); // this — кнопка, а не user
+```
+
+Передаётся только сама функция, а не связь с объектом. Решения — ниже, в разделах про стрелочные функции и `bind`.
+
+## 4. В конструкторах с new
+
+Функция, вызванная через `new`, создаёт **новый объект** и делает его `this`:
+
+```js
+function User(name) {
+  // this = {} — новый пустой объект
+  this.name = name;
+  this.isAdmin = false;
+  // return this — неявно
+}
+
+const alex = new User('Алексей');
+console.log(alex.name); // 'Алексей'
+console.log(alex.isAdmin); // false
+```
+
+Что делает `new`:
+
+1. создаёт пустой объект;
+2. вызывает функцию, подставив этот объект в `this`;
+3. возвращает объект, если функция сама не вернула другой объект.
+
+Функции-конструкторы называют с **заглавной буквы** — это знак, что их нужно вызывать через `new`.
+Если `new` забыть, в строгом режиме `this` будет `undefined`, и `this.name = name` бросит ошибку.
+В современном коде для этого обычно используют классы — у них `this` работает так же.
+
+## 5. В обработчиках событий
+
+Если обработчик — обычная функция, `this` равен **элементу, на котором висит обработчик**:
+
+```html
+<button id="myButton">Нажми меня</button>
+```
+
+```js
+const button = document.getElementById('myButton');
+
+button.addEventListener('click', function () {
+  console.log(this.getAttribute('id')); // 'myButton'
+  console.log(this === button); // true
+});
+```
+
+Со стрелочной функцией `this` будет уже не кнопкой, а внешним `this`. Надёжнее не зависеть от `this` вовсе,
+а взять элемент из события — `event.currentTarget` работает с любой функцией:
+
+```js
+button.addEventListener('click', (event) => {
+  console.log(event.currentTarget.id); // 'myButton'
+});
+```
+
+## 6. Стрелочные функции
+
+У стрелочной функции **нет своего `this`**. Она берёт `this` из того места, где была **написана** —
+как обычную переменную из внешней области видимости.
+
+Поэтому стрелка не подходит для методов объекта:
+
+```js
+const obj = {
+  name: 'Евгений',
+
+  arrowGreet: () => {
+    console.log(this.name); // this — не obj, а внешний this
+  },
+
+  greet() {
+    console.log(this.name); // this — obj
+  },
+};
+
+obj.greet(); // 'Евгений'
+obj.arrowGreet(); // в обычном скрипте — window.name (пустая строка), в модуле — TypeError
+```
+
+Внешний `this` для `arrowGreet` — это `this` на верхнем уровне файла: `window` в обычном скрипте
+или `undefined` в модуле. Фигурные скобки объекта **не** создают своей области для `this`.
+
+### Где стрелка нужна
+
+То, что стрелка берёт внешний `this`, удобно **внутри** методов — в колбэках:
+
+```js
+const team = {
+  name: 'Разработчики',
+  members: ['Аня', 'Иван'],
+
+  print() {
+    this.members.forEach((member) => {
+      console.log(`${member} — команда ${this.name}`); // this — team, как и в print
+    });
+  },
+
+  printBroken() {
+    this.members.forEach(function (member) {
+      console.log(`${member} — команда ${this.name}`); // this — undefined: обычная функция вызвана без точки
+    });
+  },
+};
+
+team.print(); // 'Аня — команда Разработчики', 'Иван — команда Разработчики'
+```
+
+Правило: **методы** объявляйте обычной (короткой) записью, а **колбэки внутри методов** — стрелками.
+
+## 7. Явная привязка: call, apply, bind
+
+`this` можно задать вручную. У каждой функции есть три метода для этого:
+
+```js
+function introduce(greeting, punctuation) {
+  return `${greeting}, я ${this.name}${punctuation}`;
+}
+
+const anna = { name: 'Анна' };
+
+introduce.call(anna, 'Привет', '!'); // 'Привет, я Анна!' — аргументы через запятую
+introduce.apply(anna, ['Здравствуйте', '.']); // 'Здравствуйте, я Анна.' — аргументы массивом
+
+const introduceAnna = introduce.bind(anna); // новая функция с навсегда привязанным this
+introduceAnna('Хай', ')'); // 'Хай, я Анна)'
+```
+
+| Метод | Что делает |
+|---|---|
+| `fn.call(obj, a, b)` | вызывает `fn` сразу с `this = obj` |
+| `fn.apply(obj, [a, b])` | то же, но аргументы — массивом |
+| `fn.bind(obj)` | **не вызывает**, а возвращает новую функцию с привязанным `this` |
+
+`bind` решает проблему потери контекста:
+
+```js
+setTimeout(user.greet.bind(user), 1000); // 'Привет, меня зовут Алексей'
+setTimeout(() => user.greet(), 1000); // то же самое через стрелку — вызов снова через точку
+```
+
+<Callout type="warning">
+  Привязку `bind` нельзя изменить: `call`, `apply` и повторный `bind` на привязанной функции не меняют её `this`.
+  Стрелочным функциям `call`, `apply` и `bind` тоже не меняют `this` — у них его нет.
+</Callout>
+
+## Как определить this: шпаргалка
+
+Проверяйте вызов по порядку — первое совпадение и есть ответ:
+
+| Как вызвана функция | `this` |
+|---|---|
+| Стрелочная функция | `this` внешней области — там, где стрелка написана |
+| `new Fn()` | новый объект |
+| `fn.call(obj)`, `fn.apply(obj)`, функция после `bind(obj)` | `obj` |
+| `obj.fn()` — через точку | `obj` |
+| Обработчик события через `addEventListener` (обычная функция) | элемент с обработчиком |
+| `fn()` — просто по имени | `undefined` в строгом режиме, глобальный объект — в нестрогом |
+
+## Проверь себя
+
+<Quiz client:visible id="js/this/strict-function" options={['window', 'undefined', 'showThis', 'TypeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  'use strict';
+
+  function showThis() {
+    console.log(this);
+  }
+
+  showThis();
+  ```
+
+  <Fragment slot="explanation">
+    Функция вызвана просто по имени — не как метод и не через `new`. В строгом режиме `this` в таком вызове — `undefined`.
+    В нестрогом был бы глобальный объект.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/this/method" options={["'Алексей'", "'Мария'", 'undefined', 'TypeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const user = {
+    name: 'Алексей',
+    greet() {
+      console.log(this.name);
+    },
+  };
+
+  const admin = { name: 'Мария', greet: user.greet };
+  admin.greet();
+  ```
+
+  <Fragment slot="explanation">
+    `this` — объект слева от точки при вызове. Функцию написали внутри `user`, но вызвали через `admin`,
+    поэтому `this` — `admin`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/this/lost-context"
+  options={["'Алексей'", 'undefined', 'TypeError', "'greet'"]}
+  answer={2}
+>
+  Что произойдёт в модуле (строгий режим)?
+
+  ```js
+  const user = {
+    name: 'Алексей',
+    greet() {
+      return this.name;
+    },
+  };
+
+  const greet = user.greet;
+  greet();
+  ```
+
+  <Fragment slot="explanation">
+    `greet()` вызвана без объекта слева, и в строгом режиме `this` — `undefined`. Обращение `undefined.name` —
+    `TypeError: Cannot read properties of undefined`. Метод не помнит объект, из которого его достали.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/this/arrow-method"
+  options={["'Евгений'", 'Не объект obj — внешний this', 'Сама функция', 'Ошибка синтаксиса']}
+  answer={1}
+>
+  Чему равен `this` внутри `greet`?
+
+  ```js
+  const obj = {
+    name: 'Евгений',
+    greet: () => this,
+  };
+
+  obj.greet();
+  ```
+
+  <Fragment slot="explanation">
+    У стрелочной функции нет своего `this` — она берёт его из места, где написана, то есть с верхнего уровня файла.
+    Вызов через точку `obj.greet()` на стрелку не влияет. Фигурные скобки объекта не создают область для `this`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/this/nested-callback"
+  options={["'Аня — Разработчики'", "'Аня — undefined' или ошибка", "'undefined — Разработчики'", 'Ничего не выведется']}
+  answer={1}
+>
+  Что выведет `team.print()` в строгом режиме?
+
+  ```js
+  const team = {
+    name: 'Разработчики',
+    members: ['Аня'],
+    print() {
+      this.members.forEach(function (member) {
+        console.log(`${member} — ${this?.name}`);
+      });
+    },
+  };
+
+  team.print();
+  ```
+
+  <Fragment slot="explanation">
+    Внутри `print` `this` — `team`, но колбэк `forEach` — отдельная обычная функция, вызванная без точки.
+    Её `this` — `undefined`, и `this?.name` даёт `undefined` (без `?.` была бы ошибка). Стрелочный колбэк взял бы `this` из `print`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/this/forgot-new"
+  options={["Вернёт объект { name: 'Аня' }", 'Вернёт undefined, ошибки нет', 'TypeError', "Создаст глобальную переменную name"]}
+  answer={2}
+>
+  Что произойдёт в строгом режиме?
+
+  ```js
+  'use strict';
+
+  function User(name) {
+    this.name = name;
+  }
+
+  const user = User('Аня');
+  ```
+
+  <Fragment slot="explanation">
+    Без `new` это обычный вызов, и в строгом режиме `this` — `undefined`. Присваивание `undefined.name = …` —
+    `TypeError`. В нестрогом режиме код молча создал бы глобальную переменную `name`, а `user` был бы `undefined`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/this/bind-final" options={['1', '2', '3', 'undefined']} answer={0}>
+  Что вернёт выражение?
+
+  ```js
+  function getX() {
+    return this.x;
+  }
+
+  const bound = getX.bind({ x: 1 });
+  bound.call({ x: 2 });
+  ```
+
+  <Fragment slot="explanation">
+    `bind` создаёт функцию с **навсегда** привязанным `this`. Ни `call`, ни `apply`, ни повторный `bind` его не меняют —
+    результат `1`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/this/event-arrow"
+  options={['Кнопку', 'Внешний this — не кнопку', 'Объект события', 'null']}
+  answer={1}
+>
+  Что выведется при клике?
+
+  ```js
+  const button = document.getElementById('myButton');
+
+  button.addEventListener('click', () => {
+    console.log(this);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    Обработчик — стрелочная функция, поэтому `this` берётся снаружи: `window` в обычном скрипте или `undefined` в модуле.
+    Кнопкой `this` был бы у обычной функции. С любой функцией кнопку надёжно даёт `event.currentTarget`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Верните контекст" level="easy">
+  Через секунду должно появиться «Привет, меня зовут Алексей», а появляется без имени. Объясните почему
+  и исправьте двумя способами.
+
+  ```js
+  const user = {
+    name: 'Алексей',
+    greet() {
+      console.log(`Привет, меня зовут ${this.name}`);
+    },
+  };
+
+  setTimeout(user.greet, 1000);
+  ```
+
+  <Fragment slot="solution">
+    `setTimeout` получает только саму функцию, без связи с `user`, и вызывает её не через точку. `this` теряется.
+
+    ```js
+    // 1. Стрелка — внутри снова вызов через точку
+    setTimeout(() => user.greet(), 1000);
+
+    // 2. bind — функция с привязанным this
+    setTimeout(user.greet.bind(user), 1000);
+    ```
+
+    Первый вариант вызывает метод в момент срабатывания таймера: если к тому времени `user.greet` заменят,
+    вызовется новая версия. `bind` фиксирует и функцию, и `this` сразу.
+  </Fragment>
+</Task>
+
+<Task title="Счётчик с цепочкой вызовов" level="easy">
+  Создайте объект `counter` со свойством `value` и методами `increment`, `decrement` и `reset`.
+  Методы должны поддерживать цепочку вызовов.
+
+  ```js
+  counter.increment().increment().increment().decrement();
+  console.log(counter.value); // 2
+
+  counter.reset().increment();
+  console.log(counter.value); // 1
+  ```
+
+  <Fragment slot="hint">
+    Чтобы после `counter.increment()` можно было снова вызвать метод, он должен вернуть сам объект.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const counter = {
+      value: 0,
+
+      increment() {
+        this.value++;
+        return this;
+      },
+
+      decrement() {
+        this.value--;
+        return this;
+      },
+
+      reset() {
+        this.value = 0;
+        return this;
+      },
+    };
+    ```
+
+    Каждый метод возвращает `this` — тот же `counter`, поэтому следующий вызов в цепочке снова идёт «через точку»
+    и получает правильный `this`. Так устроены многие библиотеки, например jQuery.
+  </Fragment>
+</Task>
+
+<Task title="Почините колбэк в методе" level="medium">
+  Метод должен вернуть строки вида `'Аня (Разработчики)'`, но падает с ошибкой. Найдите причину и исправьте двумя способами.
+
+  ```js
+  'use strict';
+
+  const team = {
+    name: 'Разработчики',
+    members: ['Аня', 'Иван'],
+
+    getLabels() {
+      return this.members.map(function (member) {
+        return `${member} (${this.name})`;
+      });
+    },
+  };
+
+  team.getLabels(); // TypeError
+  ```
+
+  <Fragment slot="solution">
+    Колбэк `map` — обычная функция, и `map` вызывает её без объекта: внутри `this` — `undefined`.
+
+    ```js
+    // 1. Стрелочная функция берёт this из getLabels
+    getLabels() {
+      return this.members.map((member) => `${member} (${this.name})`);
+    },
+
+    // 2. Второй аргумент map — thisArg
+    getLabels() {
+      return this.members.map(function (member) {
+        return `${member} (${this.name})`;
+      }, this);
+    },
+    ```
+
+    Первый вариант короче и привычнее. `thisArg` встречается в старом коде — подробнее в уроке [Метод map](/learn/js/map).
+  </Fragment>
+</Task>
+
+<Task title="Функция-конструктор" level="medium">
+  Напишите функцию-конструктор `Product(name, price)`, которая создаёт объект с этими свойствами и методом
+  `withDiscount(percent)` — он возвращает цену со скидкой, округлённую до целого.
+
+  ```js
+  const laptop = new Product('Ноутбук', 85000);
+
+  laptop.name; // 'Ноутбук'
+  laptop.withDiscount(10); // 76500
+  laptop.withDiscount(15); // 72250
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function Product(name, price) {
+      this.name = name;
+      this.price = price;
+
+      this.withDiscount = function (percent) {
+        return Math.round(this.price * (1 - percent / 100));
+      };
+    }
+    ```
+
+    `new` создаёт объект, и всё, что записано в `this`, становится его свойствами. Метод вызывается как
+    `laptop.withDiscount(…)`, поэтому внутри него `this` — `laptop`, и `this.price` — его цена.
+    Метод объявлен обычной функцией: стрелка тоже сработала бы (взяла бы `this` конструктора), но в объектах
+    принято писать методы обычной функцией.
+  </Fragment>
+</Task>
+
+<Task title="Одна функция — разные объекты" level="medium">
+  Есть функция `describe`, которая использует `this`, и два объекта. Не меняя функцию и не добавляя её в объекты,
+  получите описание каждого объекта через `call`. Затем создайте функцию `describeCat`, всегда привязанную к `cat`.
+
+  ```js
+  function describe(sound, times) {
+    return `${this.name} говорит «${sound.repeat(times)}»`;
+  }
+
+  const cat = { name: 'Кот' };
+  const dog = { name: 'Пёс' };
+
+  // 'Кот говорит «мяу»'
+  // 'Пёс говорит «гавгав»'
+  // describeCat('мур', 3) → 'Кот говорит «мурмурмур»'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    describe.call(cat, 'мяу', 1); // 'Кот говорит «мяу»'
+    describe.call(dog, 'гав', 2); // 'Пёс говорит «гавгав»'
+
+    const describeCat = describe.bind(cat);
+    describeCat('мур', 3); // 'Кот говорит «мурмурмур»'
+    ```
+
+    `call` вызывает функцию сразу с нужным `this`, следующие аргументы передаются как обычные.
+    Через `apply` то же самое: `describe.apply(dog, ['гав', 2])`. `bind` ничего не вызывает, а возвращает новую функцию.
+  </Fragment>
+</Task>
+
+<Task title="Свой bind" level="hard">
+  Напишите функцию `myBind(fn, context)`, которая работает как `fn.bind(context)`: возвращает новую функцию,
+  которая вызывает `fn` с `this = context` и со всеми переданными аргументами.
+
+  ```js
+  function greet(greeting, punctuation) {
+    return `${greeting}, ${this.name}${punctuation}`;
+  }
+
+  const greetAnna = myBind(greet, { name: 'Анна' });
+
+  greetAnna('Привет', '!'); // 'Привет, Анна!'
+  greetAnna.call({ name: 'Иван' }, 'Хай', '?'); // 'Хай, Анна?' — this не меняется
+  ```
+
+  <Fragment slot="hint">
+    Верните функцию, которая собирает аргументы через rest и вызывает `fn` через `call` или `apply`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function myBind(fn, context) {
+      return function (...args) {
+        return fn.apply(context, args);
+      };
+    }
+    ```
+
+    Возвращённая функция помнит `fn` и `context` через замыкание. Какой бы `this` ни получила она сама —
+    через `call`, точку или обработчик, — внутри `fn` вызывается с `context`. Поэтому привязку и нельзя «перебить».
+    `...args` передаёт любое количество аргументов, а `return` возвращает результат `fn`.
+  </Fragment>
+</Task>
