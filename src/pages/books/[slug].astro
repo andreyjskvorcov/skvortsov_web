@@ -2,7 +2,7 @@
 import { getCollection, render } from 'astro:content';
 import { Download, ExternalLink } from 'lucide-react';
 import BaseLayout from '@/layouts/BaseLayout.astro';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonVariants } from '@skvortsov/ui-react/button';
 import { getBookFile, isBookVisible } from '@/lib/books';
 
 export async function getStaticPaths() {

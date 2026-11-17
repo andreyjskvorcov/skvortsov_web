@@ -5,17 +5,17 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "src/styles/global.css",
+    "css": "src/styles.css",
     "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""
   },
   "aliases": {
-    "components": "@/components",
-    "utils": "@/lib/utils",
-    "ui": "@/components/ui",
-    "lib": "@/lib",
-    "hooks": "@/hooks"
+    "components": "@skvortsov/ui-react",
+    "utils": "cn",
+    "ui": "@skvortsov/ui-react/components",
+    "lib": "@skvortsov/ui-react/lib",
+    "hooks": "@skvortsov/ui-react/hooks"
   },
   "iconLibrary": "lucide"
 }

@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Check, RotateCcw, X } from 'lucide-react';
 import { cn } from 'cn';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@skvortsov/ui-react/badge';
+import { Button } from '@skvortsov/ui-react/button';
 
 interface Props {
   /** Уникальный id вопроса на сайте — по нему сохраняется ответ */

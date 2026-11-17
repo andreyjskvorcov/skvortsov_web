@@ -1,12 +1,11 @@
 @import 'tailwindcss';
-/* Токены и тёмная тема — общие с сайтом */
-@import '../../../src/styles/tokens.css';
-
-@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+/* Токены, тёмная тема и классы компонентов — общие с сайтом, из пакетов */
+@import '@skvortsov/tokens/tokens.css';
+@import '@skvortsov/ui-vue/styles.css';
 
 @layer base {
   * {
-    @apply border-border;
+    @apply border-border outline-ring/50;
   }
 
   [data-theme='dark'] {

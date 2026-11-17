@@ -2,9 +2,9 @@
 import { getCollection } from 'astro:content';
 import { BookOpen, Download } from 'lucide-react';
 import BaseLayout from '@/layouts/BaseLayout.astro';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@skvortsov/ui-react/badge';
+import { buttonVariants } from '@skvortsov/ui-react/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@skvortsov/ui-react/card';
 import { getBookFile, isBookVisible } from '@/lib/books';
 
 const books = (await getCollection('books', isBookVisible))

@@ -7,6 +7,7 @@
     "node": "^20.3.0 || >=22.0.0"
   },
   "workspaces": [
+    "packages/*",
     "apps/*"
   ],
   "scripts": {
@@ -24,15 +25,16 @@
     "@astrojs/react": "^4.4.2",
     "@astrojs/sitemap": "^3.7.4",
     "@astrojs/vue": "^5.1.4",
+    "@skvortsov/tokens": "*",
+    "@skvortsov/ui-react": "*",
+    "@skvortsov/ui-vue": "*",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "astro": "^5.18.2",
-    "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
     "lucide-react": "^1.52.0",
-    "radix-ui": "^1.6.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",

@@ -1,8 +1,13 @@
 /*
-  Дизайн-токены в схеме shadcn/ui: компоненты из components/ui ссылаются на эти имена.
-  Значения переключаются по data-theme, а @theme inline превращает их в утилиты
+  @skvortsov/tokens — дизайн-токены в схеме shadcn/ui, общие для сайта и всех приложений.
+  Подключение (после @import 'tailwindcss'):  @import '@skvortsov/tokens/tokens.css';
+
+  Значения переключаются по data-theme на <html>, а @theme inline превращает их в утилиты
   (bg-background, text-muted-foreground, border-border, bg-primary, …).
 */
+
+/* dark: срабатывает от data-theme='dark', а не от системной темы */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 :root {
   --radius: 0.625rem;
 

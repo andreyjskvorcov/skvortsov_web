@@ -44,7 +44,7 @@ npm run check      # проверка типов (astro check)
 |---|---|
 | `npm run build:apps` | Собирает все приложения из `apps/*` в `public/apps/<slug>/` |
 | `npm run dev -w @apps/<slug>` | Запускает одно приложение отдельно, с горячей перезагрузкой |
-| `npx shadcn@latest add <имя>` | Добавляет компонент shadcn в `src/components/ui/` |
+| `cd packages/ui-react && npx shadcn@latest add <имя>` | Добавляет компонент shadcn в пакет `@skvortsov/ui-react` |
 
 `build:apps` запускается автоматически перед `dev` и `build` (скрипты `predev` и `prebuild`).
 
@@ -52,13 +52,16 @@ npm run check      # проверка типов (astro check)
 
 ```
 app/
+├─ packages/                    # общие пакеты (npm workspaces) — для сайта и приложений
+│  ├─ tokens/                   # @skvortsov/tokens — цвета, радиусы, шрифты, тёмная тема
+│  ├─ ui-react/                 # @skvortsov/ui-react — компоненты shadcn/ui (button, card, …)
+│  └─ ui-vue/                   # @skvortsov/ui-vue — те же компоненты на shadcn-vue
 ├─ apps/                        # самостоятельные приложения (npm workspaces)
 │  └─ <slug>/                   # свой package.json, vite.config.ts, src/
 ├─ public/
 │  └─ apps/                     # сборка приложений — генерируется, в git не попадает
 ├─ src/
 │  ├─ components/
-│  │  ├─ ui/                    # компоненты shadcn/ui (button.tsx, card.tsx, …)
 │  │  ├─ blocks/                # свои блоки сайта: Header, ThemeToggle, LinkCard, Callout
 │  │  └─ demos/{react,vue}/     # маленькие демки для уроков
 │  ├─ content/lessons/<section>/<slug>.mdx   # уроки (разделы — в lib/sections.ts)
@@ -68,10 +71,8 @@ app/
 │  ├─ lib/                      # sections.ts (разделы уроков), projects.ts (подписи, appUrl)
 │  ├─ pages/                    # маршруты: /, /learn, /projects, /ui-kit, /guide
 │  └─ styles/
-│     ├─ tokens.css             # цвета и радиусы — единый источник темы
-│     └─ global.css             # подключение Tailwind, базовые стили, prose
+│     └─ global.css             # подключение Tailwind, токенов и кита, базовые стили, prose
 ├─ books-private/               # личные книги: PDF + описания, вне git, только в dev
-├─ components.json              # настройки shadcn CLI
 ├─ GUIDE.md                     # этот гайд (страница /guide)
 └─ astro.config.mjs
 ```
@@ -91,7 +92,7 @@ app/
 
 ### Токены
 
-Все цвета живут в [`src/styles/tokens.css`](src/styles/tokens.css) и названы по схеме shadcn:
+Все цвета живут в пакете [`packages/tokens/tokens.css`](packages/tokens/tokens.css) и названы по схеме shadcn:
 `--background`, `--foreground`, `--card`, `--primary`, `--muted-foreground`, `--border` и т.д.,
 плюс свои статусы `--info`, `--success`, `--warning`.
 
@@ -117,15 +118,31 @@ app/
 
 ## UI-kit (shadcn/ui)
 
-Компоненты shadcn — это не npm-пакет, а исходники в [`src/components/ui/`](src/components/ui/). Их можно читать и править.
+Компоненты shadcn лежат исходниками в пакете [`packages/ui-react/`](packages/ui-react/) (`@skvortsov/ui-react`).
+Их можно читать и править — изменения сразу видны и на сайте, и в приложениях, которые используют пакет.
 
+### Пакеты
+
+Кит разделён на пакеты npm workspaces — их подключают и сайт, и приложения из `apps/`:
+
+| Пакет | Что внутри | Как подключить |
+|---|---|---|
+| `@skvortsov/tokens` | токены цветов и радиусов, шрифты, вариант `dark:` от `data-theme` | в CSS: `@import '@skvortsov/tokens/tokens.css';` |
+| `@skvortsov/ui-react` | React-компоненты shadcn/ui | в CSS: `@import '@skvortsov/ui-react/styles.css';`, в коде: `import { Button } from '@skvortsov/ui-react/button'` |
+| `@skvortsov/ui-vue` | те же компоненты для Vue (shadcn-vue) | в CSS: `@import '@skvortsov/ui-vue/styles.css';`, в коде: `import { Button } from '@skvortsov/ui-vue/button'` |
+
+`styles.css` пакета нужен, чтобы Tailwind увидел классы компонентов: пакеты он по умолчанию не сканирует.
+
+Пакеты не собираются отдельно — это исходники TypeScript, которые компилирует Vite того, кто их импортирует.
 ### Добавить компонент
 
 ```sh
+cd packages/ui-react
 npx shadcn@latest add dialog
 ```
 
-Файл появится в `src/components/ui/`, нужные зависимости установятся сами.
+Файл появится в `packages/ui-react/src/components/`, нужные зависимости установятся сами.
+Чтобы компонент был доступен и через общий импорт `@skvortsov/ui-react`, добавьте строку в `packages/ui-react/src/index.ts`.
 Потом покажите компонент на странице `/ui-kit`.
 
 > CLI импортирует `cn` из пакета `cn` (официальная замена `clsx` + `tailwind-merge` от shadcn) — это нормально,
@@ -135,9 +152,9 @@ npx shadcn@latest add dialog
 
 ```astro
 ---
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@skvortsov/ui-react/badge';
+import { buttonVariants } from '@skvortsov/ui-react/button';
+import { Card, CardHeader, CardTitle } from '@skvortsov/ui-react/card';
 ---
 
 <Badge variant="secondary">Новое</Badge>
@@ -174,10 +191,42 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 
 ### Vue
 
-shadcn/ui — React-компоненты, во Vue их использовать нельзя. Во Vue-коде оформляйте элементы теми же
-Tailwind-классами на токенах (`bg-primary text-primary-foreground`, `bg-card`, `border` …) — вид и тема совпадут.
-Если понадобятся готовые сложные компоненты для Vue, можно поставить [shadcn-vue](https://www.shadcn-vue.com/)
-на те же токены.
+Для Vue есть свой пакет — `@skvortsov/ui-vue` на [shadcn-vue](https://www.shadcn-vue.com/). Компоненты те же
+(button, badge, card, alert, input), с теми же вариантами и размерами и на тех же токенах, поэтому выглядят как React-версия.
+Сравнить их можно на странице `/ui-kit` — там есть раздел «Vue-версия».
+
+```vue
+<script setup lang="ts">
+import { Button } from '@skvortsov/ui-vue/button';
+import { Card, CardContent } from '@skvortsov/ui-vue/card';
+</script>
+
+<template>
+  <Card>
+    <CardContent>
+      <Button variant="outline" @click="save">Сохранить</Button>
+    </CardContent>
+  </Card>
+</template>
+```
+
+Добавить компонент в Vue-пакет:
+
+```sh
+cd packages/ui-vue
+npx shadcn-vue@latest add dialog
+```
+
+Файлы появятся в `packages/ui-vue/src/components/<имя>/`. После этого проверьте, что новые зависимости компонента
+(например, `reka-ui`, `@vueuse/core`) есть в `packages/ui-vue/package.json`, и выполните `npm install` в `app/`.
+
+> **CLI shadcn-vue требует Node.js 22** (на Node 20 падает с ошибкой в `undici`). Если проект на Node 20 — запустите
+> CLI под Node 22 только для этой команды, например через nvm: `nvm exec 22 npx shadcn-vue@latest add dialog`.
+> Сами компоненты работают и на Node 20. Свежий `@vueuse/core` 15 тоже требует Node 22, поэтому в пакете стоит версия 14.
+
+**Два пакета — две реализации.** `Button` существует и в `ui-react`, и в `ui-vue`. Если меняете вид компонента
+(классы в `buttonVariants`, отступы, радиусы) — поменяйте его в **обоих** пакетах, иначе React- и Vue-версии разойдутся.
+Цвета и радиусы лучше менять в `@skvortsov/tokens`: они общие и сразу применятся везде.
 
 ## Уроки
 
@@ -315,7 +364,7 @@ import Task from '@/components/blocks/Task.astro';
 | Как показывается | Прямо на странице проекта | В iframe + кнопка «Открыть отдельно» |
 | Зависимости | Только те, что есть у сайта | Свои, в `apps/<slug>/package.json` |
 | Роутер | Нет | Любой (используйте hash-историю) |
-| UI-kit | React — напрямую, Vue — токены и классы | Через алиас и общие токены (см. ниже) |
+| UI-kit | React — напрямую, Vue — токены и классы | Через пакеты `@skvortsov/*` (см. ниже) |
 | Когда выбирать | Небольшой виджет или демо | Готовое приложение, свой роутер, тяжёлые библиотеки, Quasar/Element Plus |
 
 Сейчас все три примера (`todo-react`, `stopwatch-vue`, `notes-vue`) — приложения.
@@ -366,7 +415,7 @@ import App from './App.tsx';
 ### Добавить проект-приложение
 
 1. Создайте `apps/<slug>/` — проще всего скопировать похожий пример:
-   `notes-vue` (Vue + роутер, свои стили), `stopwatch-vue` (Vue + Tailwind на токенах сайта),
+   `notes-vue` (Vue + роутер, свои стили), `stopwatch-vue` (Vue + кит `@skvortsov/ui-vue`),
    `todo-react` (React + shadcn-кит сайта).
 2. В `apps/<slug>/package.json` задайте имя `@apps/<slug>`, скрипт `build` и зависимости.
 3. В `apps/<slug>/vite.config.ts` обязательно:
@@ -395,17 +444,22 @@ import App from './App.tsx';
 
 Пример — `apps/todo-react`:
 
-- `vite.config.ts`: алиас `'@'` → `../../src`, тогда работают импорты `@/components/ui/button`;
+- в `package.json` приложения — зависимости `"@skvortsov/tokens": "*"` и `"@skvortsov/ui-react": "*"`
+  (после этого — `npm install` в корне `app/`);
+- в коде — `import { Button } from '@skvortsov/ui-react/button'`;
 - `src/style.css`:
 
   ```css
   @import 'tailwindcss';
-  @import '../../../src/styles/tokens.css';
-  @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
-  @source '../../../src/components/ui';
+  @import '@skvortsov/tokens/tokens.css';
+  @import '@skvortsov/ui-react/styles.css';
   ```
 
-Для Vue-приложения достаточно Tailwind и `tokens.css` (как в `stopwatch-vue`).
+React в приложении должен быть той же мажорной версии, что и у сайта (сейчас 19): у пакета React — peer-зависимость,
+и две разные копии React дают ошибку «Invalid hook call».
+
+Для Vue-приложения — то же самое с `@skvortsov/ui-vue` вместо `ui-react` (как в `stopwatch-vue`);
+если готовые компоненты не нужны, достаточно одного `@skvortsov/tokens`.
 Приложение со своим UI (Quasar, Element Plus) может вообще не подключать кит — как `notes-vue`.
 
 #### Перенос существующего приложения
@@ -499,7 +553,7 @@ PDF хранятся в git вместе с кодом. GitHub не приним
 
 - Писать стили классами Tailwind и брать цвета из токенов.
 - Использовать shadcn-компоненты в `.astro` без `client:*` — это просто HTML.
-- Править компоненты в `src/components/ui/` под себя.
+- Править компоненты в `packages/ui-react/src/components/` под себя — изменения увидят все потребители кита.
 - Смешивать React и Vue на сайте: `.tsx` обрабатывает React, `.vue` — Vue.
 - Добавлять любые зависимости в приложения из `apps/` — на сайт они не влияют.
 
@@ -509,10 +563,12 @@ PDF хранятся в git вместе с кодом. GitHub не приним
 |---|---|---|
 | Писать цвета хексами (`bg-[#4f46e5]`, `color: #fff`) | Не переключатся в тёмной теме | Утилиты на токенах: `bg-primary` |
 | Добавлять `<style>` в `.astro` для того, что можно сделать классами | Scoped-стили сильнее утилит и ломают переопределение | Классы Tailwind |
-| Класть свои компоненты в `src/components/ui/` | `shadcn add` может их перезаписать | `src/components/blocks/` |
+| Класть компоненты сайта в `packages/ui-react` | Пакет — общий кит; `shadcn add` может перезаписать файлы | Блоки сайта — в `src/components/blocks/`, в пакет — только то, что нужно нескольким потребителям |
+| Импортировать в приложения код из `src/` сайта (`../../src`) | Приложение сломается при любом переименовании в сайте | Общий код — в `packages/`, подключать как зависимость |
 | Использовать `<Button asChild>` в `.astro` | Не работает: дети приходят как HTML | `<a class={buttonVariants()}>` |
 | Ставить `client:load` на всё подряд | Каждый остров тянет JS фреймворка | Без директивы для статики, `client:visible` для демок |
-| Использовать shadcn/ui во Vue | Это React-компоненты | Tailwind-классы на токенах или shadcn-vue |
+| Использовать `@skvortsov/ui-react` во Vue | Это React-компоненты | `@skvortsov/ui-vue` |
+| Менять вид компонента только в одном из пакетов `ui-react` / `ui-vue` | React- и Vue-версии начнут выглядеть по-разному | Правьте оба пакета, цвета и радиусы — в `@skvortsov/tokens` |
 | Писать JSX во Vue-компонентах | JSX на сайте обрабатывает только React | Шаблоны `<template>` |
 | Использовать `createWebHistory` / `BrowserRouter` в приложениях | 404 при обновлении страницы | Hash-история |
 | Ставить в приложения пакеты, требующие Vite 7+ | Конфликт с Vite 6 у Astro, `npm install` упадёт | Версии, совместимые с Vite 6 |
@@ -532,7 +588,7 @@ PDF хранятся в git вместе с кодом. GitHub не приним
 
 **Класс Tailwind не применяется.**
 Tailwind генерирует только классы, которые видит в исходниках целиком. Не собирайте имена из кусков
-(`` `bg-${color}` ``) — пишите полные имена в объекте. Для приложений проверьте `@source` в их `style.css`.
+(`` `bg-${color}` ``) — пишите полные имена в объекте. Для приложений проверьте, что в их `style.css` подключён `@skvortsov/ui-react/styles.css`.
 
 **Компонент в уроке выглядит не так, как на `/ui-kit`.**
 На него действуют стили `prose` — добавьте корневому элементу `not-prose`.

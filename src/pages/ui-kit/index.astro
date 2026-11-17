@@ -2,9 +2,11 @@
 import BaseLayout from '@/layouts/BaseLayout.astro';
 import Callout from '@/components/blocks/Callout.tsx';
 import LinkCard from '@/components/blocks/LinkCard.astro';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@skvortsov/ui-react/badge';
+import { Button } from '@skvortsov/ui-react/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@skvortsov/ui-react/card';
+import { Badge as VueBadge } from '@skvortsov/ui-vue/badge';
+import { Button as VueButton } from '@skvortsov/ui-vue/button';
 
 const colors = [
   'background',
@@ -31,7 +33,7 @@ const badgeVariants = ['default', 'secondary', 'outline', 'destructive'] as cons
     <h1>UI-kit</h1>
     <p class="mb-8 text-muted-foreground">
       Компоненты <a class="text-primary hover:underline" href="https://ui.shadcn.com">shadcn/ui</a> на токенах
-      из <code>src/styles/tokens.css</code>.
+      из пакета <code>@skvortsov/tokens</code>.
     </p>
 
     <section>
@@ -64,6 +66,19 @@ const badgeVariants = ['default', 'secondary', 'outline', 'destructive'] as cons
       <h2>Badge</h2>
       <div class="flex flex-wrap items-center gap-3">
         {badgeVariants.map((v) => <Badge variant={v}>{v}</Badge>)}
+      </div>
+    </section>
+
+    <section>
+      <h2>Vue-версия</h2>
+      <p class="mb-4 text-muted-foreground">
+        Те же компоненты из пакета <code>@skvortsov/ui-vue</code> — для Vue-приложений. Должны выглядеть так же, как React-версия выше.
+      </p>
+      <div class="flex flex-wrap items-center gap-3">
+        {buttonVariants.map((v) => <VueButton variant={v}>{v}</VueButton>)}
+      </div>
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        {badgeVariants.map((v) => <VueBadge variant={v}>{v}</VueBadge>)}
       </div>
     </section>
 

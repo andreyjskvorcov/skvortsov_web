@@ -1,11 +1,7 @@
 @import 'tailwindcss';
-/* Токены и тёмная тема — общие с сайтом */
-@import '../../../src/styles/tokens.css';
-
-@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
-
-/* Классы shadcn-компонентов сайта, которые импортируются через алиас @ */
-@source '../../../src/components/ui';
+/* Токены, тёмная тема и классы компонентов — общие с сайтом, из пакетов */
+@import '@skvortsov/tokens/tokens.css';
+@import '@skvortsov/ui-react/styles.css';
 
 @layer base {
   * {

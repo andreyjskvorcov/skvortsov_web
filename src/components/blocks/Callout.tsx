@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { CircleAlert, Info, Lightbulb, TriangleAlert } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@skvortsov/ui-react/alert';
 
 const types = {
   info: { title: 'Заметка', icon: Info, className: 'border-l-info [&>svg]:text-info' },

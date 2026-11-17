@@ -1,0 +1,5 @@
+/*
+  Подключите после @import 'tailwindcss' и токенов:  @import '@skvortsov/ui-vue/styles.css';
+  Tailwind по умолчанию не сканирует пакеты — эта строка показывает ему классы компонентов.
+*/
+@source './components';

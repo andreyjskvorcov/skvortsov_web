@@ -1,0 +1,25 @@
+{
+  "name": "@skvortsov/ui-react",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "React-компоненты на shadcn/ui для сайта и приложений",
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./*": "./src/components/*.tsx"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.4.0",
+    "radix-ui": "^1.6.7"
+  },
+  "peerDependencies": {
+    "@skvortsov/tokens": "*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

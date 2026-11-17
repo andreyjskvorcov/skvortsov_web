@@ -1,0 +1,25 @@
+{
+  "name": "@skvortsov/ui-vue",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Vue-компоненты на shadcn-vue для сайта и приложений — на тех же токенах, что и @skvortsov/ui-react",
+  "sideEffects": [
+    "*.css",
+    "*.vue"
+  ],
+  "exports": {
+    "./styles.css": "./src/styles.css",
+    "./*": "./src/components/*/index.ts"
+  },
+  "dependencies": {
+    "@vueuse/core": "^14.4.0",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.4.0",
+    "reka-ui": "^2.11.0"
+  },
+  "peerDependencies": {
+    "@skvortsov/tokens": "*",
+    "vue": "^3.5.0"
+  }
+}

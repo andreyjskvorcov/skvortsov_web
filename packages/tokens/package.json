@@ -1,0 +1,13 @@
+{
+  "name": "@skvortsov/tokens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Дизайн-токены (цвета, радиусы, шрифты, тёмная тема) для Tailwind CSS v4",
+  "style": "./tokens.css",
+  "exports": {
+    "./tokens.css": "./tokens.css"
+  },
+  "peerDependencies": {
+    "tailwindcss": "^4.0.0"
+  }
+}

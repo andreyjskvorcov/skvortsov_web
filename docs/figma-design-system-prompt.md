@@ -2,14 +2,14 @@
 
 Промпт для ИИ-ассистента в Figma (First Draft / Figma Make), чтобы собрать файл дизайн-системы на основе текущего кита сайта.
 
-- **Источник значений** — код: цвета и радиусы из [`src/styles/tokens.css`](../src/styles/tokens.css),
-  компоненты из [`src/components/ui/`](../src/components/ui/) и [`src/components/blocks/`](../src/components/blocks/).
+- **Источник значений** — код: цвета и радиусы из [`packages/tokens/tokens.css`](../packages/tokens/tokens.css),
+  компоненты из [`packages/ui-react/src/components/`](../packages/ui-react/src/components/) (Vue-версия — [`packages/ui-vue`](../packages/ui-vue/)) и [`src/components/blocks/`](../src/components/blocks/).
   Если токены в коде меняются — обновите таблицы в промпте.
 - **Как использовать:** скопируйте блок ниже целиком. Если результат получается «плоским», отдавайте разделы по одному:
   сначала 1–2 (переменные и типографика), потом 4, потом 5–6.
 - **Figma Make** делает код-прототип, а не нативный файл — для переменных и компонентов с вариантами лучше Figma Design
   (First Draft) или ручная сборка по этому ТЗ.
-- **Обратный перенос:** решения из Figma (новые цвета, радиусы, компоненты) переносятся в `tokens.css` и компоненты —
+- **Обратный перенос:** решения из Figma (новые цвета, радиусы, компоненты) переносятся в `packages/tokens/tokens.css` и компоненты пакета —
   имена переменных и вариантов в Figma совпадают с кодом.
 
 ````text

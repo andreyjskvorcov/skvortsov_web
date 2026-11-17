@@ -1,9 +1,9 @@
 import { useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Badge } from '@skvortsov/ui-react/badge';
+import { Button } from '@skvortsov/ui-react/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@skvortsov/ui-react/card';
+import { Input } from '@skvortsov/ui-react/input';
 
 interface Todo {
   id: number;

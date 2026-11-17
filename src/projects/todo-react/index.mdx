@@ -13,7 +13,8 @@ tags: [shadcn, tailwind, useState]
 
 При этом приложение пользуется UI-kit сайта:
 
-- в `vite.config.ts` алиас `@` указывает на `src` сайта, поэтому работают импорты вида `@/components/ui/button`;
-- `style.css` подключает Tailwind, общие токены `src/styles/tokens.css` и через `@source` — классы компонентов из `src/components/ui`.
+- в `package.json` подключены общие пакеты `@skvortsov/ui-react` (компоненты) и `@skvortsov/tokens` (токены) —
+  те же, что использует сайт, поэтому работают импорты вида `@skvortsov/ui-react/button`;
+- `style.css` подключает Tailwind, `@skvortsov/tokens/tokens.css` и `@skvortsov/ui-react/styles.css` — классы компонентов.
 
 Так можно подключать кит к любому React-приложению из `apps/`, не встраивая его в Astro.

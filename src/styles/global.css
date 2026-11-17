@@ -1,13 +1,14 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin '@tailwindcss/typography';
-@import './tokens.css';
+/* Общие токены и классы компонентов — из пакетов packages/tokens, packages/ui-react и packages/ui-vue */
+@import '@skvortsov/tokens/tokens.css';
+@import '@skvortsov/ui-react/styles.css';
+@import '@skvortsov/ui-vue/styles.css';
 
 /* Самостоятельные приложения со своими стилями — классы из них не собираем */
 @source not '../../apps';
 
-/* dark: срабатывает от data-theme, который ставит ThemeToggle */
-@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 @layer base {
   * {
