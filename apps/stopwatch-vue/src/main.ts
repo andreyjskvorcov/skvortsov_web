@@ -1,6 +1,6 @@
 import { createApp } from 'vue';
 import App from './App.vue';
-import { syncTheme } from './theme';
+import { syncTheme } from '@skvortsov/shared/theme';
 import './style.css';
 
 syncTheme();

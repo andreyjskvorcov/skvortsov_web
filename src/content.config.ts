@@ -40,33 +40,4 @@ const projects = defineCollection({
   }),
 });
 
-/*
-  Книга — описание <slug>.md + PDF:
-  - публичная: src/content/books/<slug>.md и public/books/<file>;
-  - личная (private: true): books-private/<slug>.md и books-private/<file> — папка вне git, видна только в npm run dev.
-  Текст после frontmatter — заметки о книге, показываются под читалкой.
-*/
-const books = defineCollection({
-  loader: glob({
-    pattern: ['src/content/books/*.md', 'books-private/*.md'],
-    base: '.',
-    // id — имя файла без расширения: из него получается адрес /books/<slug>
-    generateId: ({ entry }) => entry.split('/').pop()!.replace(/\.md$/, ''),
-  }),
-  schema: z.object({
-    title: z.string(),
-    author: z.string(),
-    description: z.string(),
-    // Только латиница, цифры, точка, дефис и подчёркивание — чтобы ссылка на файл не ломалась
-    file: z.string().regex(/^[\w.-]+\.pdf$/i, 'Имя PDF: латиница, цифры, . - _ и расширение .pdf'),
-    year: z.number().optional(),
-    cover: z.string().optional(),
-    tags: z.array(z.string()).default([]),
-    order: z.number().default(100),
-    draft: z.boolean().default(false),
-    // true — личная книга: PDF и описание в books-private/, видна только в npm run dev и не попадает на сайт
-    private: z.boolean().default(false),
-  }),
-});
-
-export const collections = { lessons, projects, books };
+export const collections = { lessons, projects };

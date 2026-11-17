@@ -11,9 +11,9 @@
 - [Структура](#структура)
 - [Стили и тема](#стили-и-тема)
 - [UI-kit (shadcn/ui)](#ui-kit-shadcnui)
+- [Общий код: утилиты, типы, localStorage](#общий-код-утилиты-типы-localstorage)
 - [Уроки](#уроки)
 - [Проекты](#проекты)
-- [Книги](#книги)
 - [Можно и нельзя](#можно-и-нельзя)
 - [Частые проблемы](#частые-проблемы)
 
@@ -55,7 +55,8 @@ app/
 ├─ packages/                    # общие пакеты (npm workspaces) — для сайта и приложений
 │  ├─ tokens/                   # @skvortsov/tokens — цвета, радиусы, шрифты, тёмная тема
 │  ├─ ui-react/                 # @skvortsov/ui-react — компоненты shadcn/ui (button, card, …)
-│  └─ ui-vue/                   # @skvortsov/ui-vue — те же компоненты на shadcn-vue
+│  ├─ ui-vue/                   # @skvortsov/ui-vue — те же компоненты на shadcn-vue
+│  └─ shared/                   # @skvortsov/shared — код без UI: localStorage, тема, утилиты, типы, хуки
 ├─ apps/                        # самостоятельные приложения (npm workspaces)
 │  └─ <slug>/                   # свой package.json, vite.config.ts, src/
 ├─ public/
@@ -66,25 +67,22 @@ app/
 │  │  └─ demos/{react,vue}/     # маленькие демки для уроков
 │  ├─ content/lessons/<section>/<slug>.mdx   # уроки (разделы — в lib/sections.ts)
 │  ├─ projects/<slug>/index.mdx              # описания проектов
-│  ├─ content/books/<slug>.md                # описания публичных книг (PDF — в public/books/)
 │  ├─ layouts/                  # BaseLayout (шапка, тема), DocsLayout (уроки)
 │  ├─ lib/                      # sections.ts (разделы уроков), projects.ts (подписи, appUrl)
 │  ├─ pages/                    # маршруты: /, /learn, /projects, /ui-kit, /guide
 │  └─ styles/
 │     └─ global.css             # подключение Tailwind, токенов и кита, базовые стили, prose
-├─ books-private/               # личные книги: PDF + описания, вне git, только в dev
 ├─ GUIDE.md                     # этот гайд (страница /guide)
 └─ astro.config.mjs
 ```
 
 | Адрес | Файл |
 |---|---|
-| `/` | `src/pages/index.astro` |
-| `/learn`, `/learn/<section>` | `src/pages/learn/index.astro`, `src/pages/learn/[section]/index.astro` |
+| `/` | `src/pages/index.astro` — пока пустая, место под лендинг |
+| `/learn`, `/learn/<section>` | `src/pages/learn/index.astro` — список разделов (пункт «Обучение» в шапке), `src/pages/learn/[section]/index.astro` |
 | `/learn/<section>/<slug>` | `src/pages/learn/[...slug].astro` → `DocsLayout` |
 | `/projects`, `/projects/<slug>` | `src/pages/projects/index.astro`, `src/pages/projects/[slug].astro` |
 | `/ui-kit` | `src/pages/ui-kit/index.astro` — витрина компонентов и токенов |
-| `/books`, `/books/<slug>` | `src/pages/books/index.astro`, `src/pages/books/[slug].astro` — список и читалка |
 | `/guide` | `src/pages/guide.astro` — этот гайд, рендерится из `GUIDE.md` |
 | `/apps/<slug>/index.html` | собранное приложение из `apps/<slug>/` |
 
@@ -105,6 +103,9 @@ app/
 ### Тёмная тема
 
 - Тема хранится в атрибуте `data-theme` на `<html>`; её ставит скрипт в `BaseLayout` до отрисовки и переключает `ThemeToggle`.
+- Выбор пользователя сохраняется в `localStorage` под ключом `THEME_STORAGE_KEY` (`'theme'`) из `@skvortsov/shared/theme`.
+  `ThemeToggle` вызывает `toggleTheme()` оттуда же, а inline-скрипт в `BaseLayout` получает ключ через `define:vars`
+  (inline-скрипт выполняется до загрузки модулей и импортировать их не может).
 - Вариант `dark:` в Tailwind настроен на этот атрибут, а не на системную тему: `dark:bg-input/30`.
 - Цвета из токенов переключаются сами — писать `dark:` для них не нужно.
 
@@ -130,10 +131,34 @@ app/
 | `@skvortsov/tokens` | токены цветов и радиусов, шрифты, вариант `dark:` от `data-theme` | в CSS: `@import '@skvortsov/tokens/tokens.css';` |
 | `@skvortsov/ui-react` | React-компоненты shadcn/ui | в CSS: `@import '@skvortsov/ui-react/styles.css';`, в коде: `import { Button } from '@skvortsov/ui-react/button'` |
 | `@skvortsov/ui-vue` | те же компоненты для Vue (shadcn-vue) | в CSS: `@import '@skvortsov/ui-vue/styles.css';`, в коде: `import { Button } from '@skvortsov/ui-vue/button'` |
+| `@skvortsov/shared` | код без UI: localStorage, тема, утилиты, типы, хуки React/Vue | в коде: `import { createStorage } from '@skvortsov/shared/storage'` — см. [Общий код](#общий-код-утилиты-типы-localstorage) |
 
 `styles.css` пакета нужен, чтобы Tailwind увидел классы компонентов: пакеты он по умолчанию не сканирует.
 
 Пакеты не собираются отдельно — это исходники TypeScript, которые компилирует Vite того, кто их импортирует.
+
+### Откуда компоненты
+
+shadcn — это не библиотека, а генератор: CLI копирует код компонента в проект, и дальше это **наш код**.
+
+- `button`, `badge`, `card`, `alert`, `input` в `packages/ui-react` созданы `npx shadcn@latest add`,
+  те же компоненты в `packages/ui-vue` — `npx shadcn-vue@latest add`.
+- Из npm приходят только их зависимости (прописаны в `package.json` пакета, не в корне):
+
+  | Зависимость | Зачем |
+  |---|---|
+  | `radix-ui` (React) / `reka-ui` (Vue, порт Radix) | поведение компонентов; сейчас используется только `Slot` для пропа `asChild` |
+  | `class-variance-authority` | варианты: `variant="outline"`, `size="sm"` |
+  | `cn` | склейка и слияние классов Tailwind |
+
+- `asChild` отдаёт классы кнопки дочернему элементу: `<Button asChild><a href="/guide">Гайд</a></Button>`
+  выглядит как кнопка, но в разметке остаётся ссылкой.
+- Внешний вид — наш: компоненты пишут `bg-primary`, `border-border`, а значения берутся из `@skvortsov/tokens`.
+- **shadcn сам не обновляется** — `npm update` код компонентов не меняет. Чтобы взять новую версию,
+  повторите `add` с перезаписью и посмотрите diff: ваши правки в файле перезапишутся.
+- Свои компоненты поверх кита — `Callout`, `Quiz`, `Task`, `LinkCard`, `ThemeToggle`, `BackToTop` —
+  к shadcn не относятся, см. [Свои блоки](#свои-блоки).
+
 ### Добавить компонент
 
 ```sh
@@ -227,6 +252,128 @@ npx shadcn-vue@latest add dialog
 **Два пакета — две реализации.** `Button` существует и в `ui-react`, и в `ui-vue`. Если меняете вид компонента
 (классы в `buttonVariants`, отступы, радиусы) — поменяйте его в **обоих** пакетах, иначе React- и Vue-версии разойдутся.
 Цвета и радиусы лучше менять в `@skvortsov/tokens`: они общие и сразу применятся везде.
+
+## Общий код: утилиты, типы, localStorage
+
+Пакет [`packages/shared/`](packages/shared/) (`@skvortsov/shared`) — общий код **без UI и без стилей**
+для сайта и всех приложений. Импорт — по подпутям, как у кита:
+
+| Подпуть | Что внутри |
+|---|---|
+| `@skvortsov/shared/storage` | `createStorage(namespace)` — безопасный localStorage; `readRaw` / `writeRaw` / `removeRaw` для сырых строк |
+| `@skvortsov/shared/theme` | `THEME_STORAGE_KEY`, `getTheme`, `setTheme`, `toggleTheme`, `getStoredTheme` — для сайта; `syncTheme` — для приложений |
+| `@skvortsov/shared/utils` | чистые функции: `plural` (склонение «1 урок / 3 урока / 5 уроков»), `clamp`, `debounce` |
+| `@skvortsov/shared/types` | обобщённые типы: `Nullable<T>`, `Maybe<T>`, `ValueOf<T>`, `AsyncState<T>` |
+| `@skvortsov/shared/react` | хук `useLocalStorage` |
+| `@skvortsov/shared/vue` | composable `useLocalStorage` |
+
+Подключение в приложении — зависимость `"@skvortsov/shared": "*"` в его `package.json` и `npm install` в корне `app/`.
+React и Vue у пакета — необязательные peer-зависимости: Vue-приложение импортирует `/vue` и про React ничего не знает.
+
+### Направление зависимостей
+
+```
+tokens  ←  ui-react / ui-vue
+shared  ←  ui-react / ui-vue, сайт, apps
+```
+
+`shared` ничего не импортирует из кита, сайта и приложений. Ядро (`storage`, `theme`, `utils`, `types`) — обычный
+TypeScript без фреймворков; `react/` и `vue/` — тонкие обёртки над ним, поэтому логика одна для обоих.
+
+### localStorage
+
+**Сайт и приложения открыты с одного домена (приложения — в iframe), поэтому localStorage у них общий.**
+Ключ `items` из двух приложений перезапишет друг друга. Поэтому напрямую `localStorage` не используем —
+только через хранилище со своим пространством имён:
+
+```ts
+import { createStorage } from '@skvortsov/shared/storage';
+
+// На уровне модуля, не внутри компонента. Имя — slug приложения или название блока сайта
+const storage = createStorage('todo-react'); // ключи вида todo-react:<key>
+
+storage.get<Todo[]>('todos', []); // значение или [] — если ключа нет или JSON битый
+storage.set('todos', todos); // JSON внутри
+storage.remove('todos');
+const off = storage.subscribe('todos', () => {}); // изменения из этой вкладки, других вкладок и iframe
+```
+
+Что хранилище делает само:
+
+- не падает при SSR (нет `window`) и в браузерах, где localStorage запрещён или переполнен, —
+  тогда значение живёт в памяти до перезагрузки;
+- хранит значения в JSON, битый JSON возвращает значение по умолчанию;
+- сообщает об изменениях всем подписчикам: в этой вкладке — сразу при `set`, из других вкладок и iframe — через событие `storage`.
+
+Занятые пространства имён:
+
+| Имя | Кто | Ключи |
+|---|---|---|
+| `quiz` | блок `Quiz` | `quiz:<id вопроса>` — номер выбранного ответа |
+| `todo-react` | приложение | `todo-react:todos` |
+| `stopwatch-vue` | приложение | `stopwatch-vue:laps` |
+| — | тема сайта | `theme` — сырая строка `'light'` / `'dark'`, без JSON и пространства имён |
+
+> Ключи — часть сохранённых данных пользователей. Если переименовать пространство имён или ключ,
+> старые значения у посетителей «потеряются». Меняйте их, только добавив перенос со старого ключа.
+
+### Хуки для React и Vue
+
+React:
+
+```tsx
+import { createStorage } from '@skvortsov/shared/storage';
+import { useLocalStorage } from '@skvortsov/shared/react';
+
+const storage = createStorage('todo-react');
+
+function App() {
+  const [todos, setTodos, removeTodos] = useLocalStorage(storage, 'todos', initialTodos);
+  setTodos((list) => [...list, todo]); // как useState, но с сохранением
+}
+```
+
+Vue:
+
+```vue
+<script setup lang="ts">
+import { createStorage } from '@skvortsov/shared/storage';
+import { useLocalStorage } from '@skvortsov/shared/vue';
+
+const storage = createStorage('stopwatch-vue');
+const laps = useLocalStorage(storage, 'laps', [] as number[]); // ref, работает с v-model
+
+laps.value = [time, ...laps.value]; // сохраняется
+laps.remove(); // удалить ключ — вернётся значение по умолчанию
+</script>
+```
+
+- **Первый рендер возвращает значение по умолчанию**, сохранённое читается после монтирования.
+  Так разметка острова совпадает с серверной, и нет ошибок гидрации. Первый кадр может мелькнуть значением по умолчанию.
+- **Во Vue мутации на месте не сохраняются**: `laps.value.push(x)` поменяет массив, но не запишет его.
+  Присваивайте новое значение: `laps.value = [...laps.value, x]`.
+- Все компоненты с одинаковым хранилищем и ключом видят одно значение и обновляются вместе.
+
+### Где держать код и типы
+
+| Что | Куда |
+|---|---|
+| нужно только сайту | `src/lib/` (как `projects.ts`, `sections.ts`) |
+| нужно только одному приложению | `apps/<slug>/src/lib/`, хуки — в `hooks/` / `composables/` |
+| нужно в двух местах и больше | `packages/shared/` |
+| пропсы компонента или виджета | в файле самого компонента: `interface Props` |
+| типы приложения: сущности, ответы его API | в приложении: `apps/<slug>/src/types.ts` или рядом с запросами (`src/api/types.ts`) |
+| обобщённые типы без привязки к приложению | `@skvortsov/shared/types` |
+
+- Конкретные типы (`Todo`, `TodoResponse`) в `shared` не попадают, пока тот же контракт не понадобится во втором месте.
+  Пример — `apps/todo-react/src/types.ts`.
+- Типы экспортируются явно, без `declare global`: так видно, откуда тип пришёл, и он одинаково работает в сайте и приложениях.
+  Глобально объявляйте только расширения браузерных типов (`interface Window { … }`).
+- Новую функцию добавляйте в подходящий модуль `src/<модуль>/index.ts` пакета; новый модуль — новая папка
+  `src/<модуль>/index.ts`, она сразу доступна как `@skvortsov/shared/<модуль>` (так настроены `exports`).
+- Хук или composable — обёртка над ядром: логику кладите в `storage` / `utils`, в `react/` и `vue/` — только связку с фреймворком.
+
+Проверка типов пакета: `cd packages/shared && npx -p typescript tsc -p .`.
 
 ## Уроки
 
@@ -367,7 +514,7 @@ import Task from '@/components/blocks/Task.astro';
 | UI-kit | React — напрямую, Vue — токены и классы | Через пакеты `@skvortsov/*` (см. ниже) |
 | Когда выбирать | Небольшой виджет или демо | Готовое приложение, свой роутер, тяжёлые библиотеки, Quasar/Element Plus |
 
-Сейчас все три примера (`todo-react`, `stopwatch-vue`, `notes-vue`) — приложения.
+Сейчас оба примера (`todo-react`, `stopwatch-vue`) — приложения.
 
 ### Frontmatter проекта
 
@@ -415,8 +562,7 @@ import App from './App.tsx';
 ### Добавить проект-приложение
 
 1. Создайте `apps/<slug>/` — проще всего скопировать похожий пример:
-   `notes-vue` (Vue + роутер, свои стили), `stopwatch-vue` (Vue + кит `@skvortsov/ui-vue`),
-   `todo-react` (React + shadcn-кит сайта).
+   `stopwatch-vue` (Vue + кит `@skvortsov/ui-vue`) или `todo-react` (React + shadcn-кит сайта).
 2. В `apps/<slug>/package.json` задайте имя `@apps/<slug>`, скрипт `build` и зависимости.
 3. В `apps/<slug>/vite.config.ts` обязательно:
 
@@ -437,8 +583,55 @@ import App from './App.tsx';
   Иначе обновление страницы на внутреннем маршруте даст 404: статический хостинг не знает о маршрутах приложения.
 - **Версии Vite держите на той же мажорной, что у Astro** (сейчас Vite 6). Пакеты, требующие Vite 7+
   (например, `vue-router@5`), npm не установит. Проверить версию: `npm ls vite`.
-- **Тема**: скопируйте `src/theme.ts` из любого примера и вызовите `syncTheme()` до монтирования —
-  в iframe приложение будет повторять тему сайта, отдельно — системную.
+- **Тема**: добавьте зависимость `@skvortsov/shared` и вызовите `syncTheme()` до монтирования —
+  в iframe приложение будет повторять тему сайта, отдельно — системную:
+
+  ```ts
+  import { syncTheme } from '@skvortsov/shared/theme';
+
+  syncTheme();
+  createApp(App).mount('#app');
+  ```
+
+- **localStorage — только через `createStorage('<slug>')`**: он общий с сайтом и другими приложениями,
+  см. [localStorage](#localstorage).
+
+#### Структура приложения
+
+Внутри `apps/<slug>/src/` можно заводить свои компоненты и виджеты — каждое приложение независимо:
+
+```
+apps/todo-react/src/
+├─ components/      # мелкие компоненты приложения: TodoItem, EmptyState
+├─ widgets/         # крупные блоки из нескольких компонентов: TodoList, FiltersPanel
+├─ pages/           # страницы, если есть роутер
+├─ hooks/           # React; во Vue — composables/
+├─ lib/             # функции, нужные только этому приложению
+├─ api/             # запросы к API приложения и их типы, если есть
+├─ types.ts         # типы приложения: Todo, ответы API
+├─ App.tsx
+└─ style.css
+```
+
+- **Tailwind сам видит новые файлы**: плагин `@tailwindcss/vite` сканирует всю папку приложения, `@source` не нужен.
+- **Сайт эти файлы не сканирует** — в `src/styles/global.css` стоит `@source not '../../apps'`,
+  поэтому классы приложений не попадают в CSS сайта.
+- Внутри своих компонентов можно использовать кит: `import { Button } from '@skvortsov/ui-react/button'` —
+  токены и тёмная тема будут те же, что на сайте.
+- Если приложение на своём CSS, без Tailwind и кита, классы Tailwind и `@skvortsov/ui-*` в приложении не работают —
+  сначала подключите их, см. [UI-kit сайта в приложении](#ui-kit-сайта-в-приложении).
+
+Куда класть компонент:
+
+| Где нужен | Куда |
+|---|---|
+| только в одном приложении | `apps/<slug>/src/components` или `widgets` |
+| в двух приложениях и больше или ещё на сайте | в `packages/ui-react` / `packages/ui-vue` (обе реализации) |
+| в уроке на сайте | `src/components/blocks` или `src/components/demos` |
+
+Сначала пишите компонент внутри приложения и переносите в пакет, только когда он понадобился во втором месте, —
+так пакеты не разрастаются компонентами одного проекта. То же для функций и типов —
+см. [Где держать код и типы](#где-держать-код-и-типы).
 
 #### UI-kit сайта в приложении
 
@@ -460,7 +653,7 @@ React в приложении должен быть той же мажорной
 
 Для Vue-приложения — то же самое с `@skvortsov/ui-vue` вместо `ui-react` (как в `stopwatch-vue`);
 если готовые компоненты не нужны, достаточно одного `@skvortsov/tokens`.
-Приложение со своим UI (Quasar, Element Plus) может вообще не подключать кит — как `notes-vue`.
+Приложение со своим UI (Quasar, Element Plus) может вообще не подключать кит.
 
 #### Перенос существующего приложения
 
@@ -471,82 +664,6 @@ React в приложении должен быть той же мажорной
 5. Не переносится как статика: SSR-фреймворки с сервером (Nuxt с `server/`, Next) —
    такие приложения хостятся отдельно, а в проекте остаётся только описание со ссылкой `repo`.
 
-## Книги
-
-Раздел `/books` — PDF, которые можно читать прямо на сайте или скачать.
-
-> **Всё из `public/books/` публикуется вместе с сайтом и доступно любому.** Выкладывайте только свои материалы
-> или книги со свободной лицензией. Купленные и скачанные книги публиковать нельзя — это распространение чужих
-> материалов, и хостинг может удалить сайт по жалобе правообладателя.
-
-### Добавить книгу
-
-1. Положите PDF в `public/books/` (не в `src/content/books/` — там только описания). Имя файла — **латиница, цифры, `.`, `-`, `_`**: `clean-code-notes.pdf`, а не `Мои заметки.pdf`.
-2. Создайте `src/content/books/<slug>.md` — `<slug>` станет адресом страницы `/books/<slug>`:
-
-   ```md
-   ---
-   title: Конспект по JavaScript
-   author: Андрей Скворцов
-   description: Короткое описание — показывается в карточке и в поиске
-   file: js-notes.pdf # имя файла из public/books/
-   year: 2026 # необязательно
-   cover: /books/covers/js-notes.jpg # необязательно — обложка из public/
-   tags: [javascript]
-   order: 1 # порядок в списке, по умолчанию 100
-   draft: false # true — книга не публикуется
-   private: false # true — личная книга, только локально (см. ниже)
-   ---
-
-   Заметки о книге — необязательный текст в Markdown, он показывается под читалкой.
-   ```
-
-3. Запустите `npm run dev` — книга появится на `/books`.
-
-Если PDF не найден, сборка остановится с ошибкой `Книги: файл public/books/… не найден` — битая ссылка на сайт не попадёт.
-Неподходящее имя файла тоже даст понятную ошибку при сборке.
-
-### Личные книги
-
-Купленные и любые другие книги, которые нельзя публиковать, можно читать в той же читалке — **только у себя локально**.
-Для них всё — и PDF, и описание — лежит в папке `books-private/` в корне проекта. Она в `.gitignore`: в репозиторий
-не попадает ни файл, ни даже название книги.
-
-1. Положите PDF в `books-private/`.
-2. Рядом создайте описание `books-private/<slug>.md` с `private: true`:
-
-   ```md
-   ---
-   title: Название книги
-   author: Автор
-   description: …
-   file: my-book.pdf
-   private: true
-   ---
-   ```
-
-3. В `npm run dev` книга появится в списке с пометкой «Личная — только локально».
-
-В публичной сборке (`npm run build`) личных книг нет совсем: ни карточек, ни страниц, ни PDF в `dist/`.
-Файл отдаётся только dev-сервером по адресу `/books/private/<file>`.
-
-Если забыть `private: true`, книга не утечёт: сборка будет искать PDF в `public/books/`, не найдёт его и остановится с ошибкой.
-
-### Как устроена читалка
-
-Страница книги встраивает PDF во встроенный просмотрщик браузера (`<iframe>`). На компьютере он работает
-в Chrome, Firefox, Safari и Edge. На телефонах встроенный просмотр поддерживается не везде, поэтому рядом всегда есть
-кнопки «Открыть в новой вкладке» и «Скачать PDF».
-
-### Большие файлы
-
-PDF хранятся в git вместе с кодом. GitHub не принимает файлы больше 100 МБ, а каждая новая версия файла
-навсегда остаётся в истории и увеличивает репозиторий. Если книг много или они тяжёлые:
-
-- уменьшите PDF перед добавлением (например, сохраните с меньшим разрешением картинок);
-- подключите [Git LFS](https://git-lfs.com) для `*.pdf`;
-- или храните файлы во внешнем хранилище и укажите полный адрес — тогда `src/lib/books.ts` нужно доработать.
-
 ## Можно и нельзя
 
 ### Можно
@@ -556,6 +673,8 @@ PDF хранятся в git вместе с кодом. GitHub не приним
 - Править компоненты в `packages/ui-react/src/components/` под себя — изменения увидят все потребители кита.
 - Смешивать React и Vue на сайте: `.tsx` обрабатывает React, `.vue` — Vue.
 - Добавлять любые зависимости в приложения из `apps/` — на сайт они не влияют.
+- Заводить в приложениях свои `components/`, `widgets/`, `lib/`, `types.ts` — каждое приложение независимо.
+- Брать из `@skvortsov/shared` хранилище, тему, утилиты и типы и в сайте, и в приложениях.
 
 ### Нельзя (или не стоит)
 
@@ -573,8 +692,12 @@ PDF хранятся в git вместе с кодом. GitHub не приним
 | Использовать `createWebHistory` / `BrowserRouter` в приложениях | 404 при обновлении страницы | Hash-история |
 | Ставить в приложения пакеты, требующие Vite 7+ | Конфликт с Vite 6 у Astro, `npm install` упадёт | Версии, совместимые с Vite 6 |
 | Коммитить `public/apps/` | Это результат сборки | Собирается `build:apps` |
-| Выкладывать в `public/books/` чужие купленные или скачанные книги | Всё из `public/` публикуется и доступно любому | Только свои материалы или книги со свободной лицензией |
-| Импортировать в Astro-сайт код из `apps/` | Приложения исключены из tsconfig и Tailwind сайта | Общий код держать в `src/`, приложения импортируют его через алиас |
+| Импортировать в Astro-сайт код из `apps/` | Приложения исключены из tsconfig и Tailwind сайта | Общий код — в `packages/shared` (или `ui-*`), подключать как зависимость |
+| Обращаться к `localStorage` напрямую | Общий для сайта и всех приложений: одинаковые ключи перезапишут друг друга; падает при SSR и в приватном режиме | `createStorage('<slug>')` из `@skvortsov/shared/storage` |
+| Переименовывать пространство имён или ключ хранилища | Сохранённые данные пользователей пропадут | Оставить старый ключ или добавить перенос |
+| Класть в `shared` типы и функции одного приложения | Пакет разрастётся кодом, нужным в одном месте | В само приложение; в `shared` — когда нужно во втором месте |
+| Импортировать в `shared` что-то из `ui-*`, сайта или приложений | Появятся циклические зависимости | `shared` — нижний слой, зависит только от себя |
+| Мутировать на месте значение из Vue-`useLocalStorage` (`.push`) | Изменение не сохранится | Присвоить новое значение |
 
 ## Частые проблемы
 
@@ -596,7 +719,7 @@ Tailwind генерирует только классы, которые види
 **Кнопка в демке или квизе не реагирует на клик.**
 У острова нет директивы `client:*`. (`Task` директива не нужна — он работает без JS.)
 
-**Удалённая книга или урок всё ещё попадает в сборку.**
+**Удалённый урок или проект всё ещё попадает в сборку.**
 Astro кеширует содержимое коллекций, и если удалить из папки последний файл, кеш может не обновиться.
 Сбросьте его: `rm -rf .astro/data-store.json node_modules/.astro` — и запустите сборку снова.
 

@@ -25,6 +25,7 @@
     "@astrojs/react": "^4.4.2",
     "@astrojs/sitemap": "^3.7.4",
     "@astrojs/vue": "^5.1.4",
+    "@skvortsov/shared": "*",
     "@skvortsov/tokens": "*",
     "@skvortsov/ui-react": "*",
     "@skvortsov/ui-vue": "*",

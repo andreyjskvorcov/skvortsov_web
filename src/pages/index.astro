@@ -1,23 +1,7 @@
 ---
 import BaseLayout from '@/layouts/BaseLayout.astro';
-import LinkCard from '@/components/blocks/LinkCard.astro';
-import { buttonVariants } from '@skvortsov/ui-react/button';
-import { sections, sectionIds } from '@/lib/sections';
 ---
 
 <BaseLayout title="Главная">
-  <section class="page-container pt-12 pb-8">
-    <h1>Фронтенд: от основ до продакшена</h1>
-    <p class="max-w-2xl text-lg text-muted-foreground">
-      Уроки по JavaScript, Vue, React и вебу с живыми примерами, плюс собственный UI-kit.
-    </p>
-    <div class="mt-6 flex flex-wrap gap-3">
-      <a class={buttonVariants({ size: 'lg' })} href="/learn">Начать учиться</a>
-      <a class={buttonVariants({ size: 'lg', variant: 'outline' })} href="/projects">Проекты</a>
-    </div>
-  </section>
-
-  <section class="page-container grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-4 pb-12">
-    {sectionIds.map((id) => <LinkCard title={sections[id].title} description={sections[id].description} href={`/learn/${id}`} />)}
-  </section>
+  <!-- Здесь будет лендинг. Список разделов обучения — на /learn -->
 </BaseLayout>

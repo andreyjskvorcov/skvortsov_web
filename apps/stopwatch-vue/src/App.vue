@@ -2,9 +2,15 @@
 import { computed, onUnmounted, ref } from 'vue';
 import { Button } from '@skvortsov/ui-vue/button';
 import { Card, CardContent } from '@skvortsov/ui-vue/card';
+import { createStorage } from '@skvortsov/shared/storage';
+import { useLocalStorage } from '@skvortsov/shared/vue';
+
+// Ключи вида stopwatch-vue:<key> — localStorage общий с сайтом и другими приложениями
+const storage = createStorage('stopwatch-vue');
 
 const elapsed = ref(0);
-const laps = ref<number[]>([]);
+// Круги переживают перезагрузку страницы
+const laps = useLocalStorage(storage, 'laps', [] as number[]);
 const running = ref(false);
 
 let startedAt = 0;
@@ -24,11 +30,12 @@ function stop() {
 function reset() {
   stop();
   elapsed.value = 0;
-  laps.value = [];
+  laps.remove();
 }
 
 function lap() {
-  laps.value.unshift(elapsed.value);
+  // Мутация на месте не сохранится — присваиваем новый массив
+  laps.value = [elapsed.value, ...laps.value];
 }
 
 const format = (ms: number) => {
@@ -52,7 +59,7 @@ onUnmounted(stop);
         <Button v-if="!running" @click="start">Старт</Button>
         <Button v-else @click="stop">Пауза</Button>
         <Button variant="outline" :disabled="!running" @click="lap">Круг</Button>
-        <Button variant="ghost" :disabled="!elapsed" @click="reset">Сброс</Button>
+        <Button variant="ghost" :disabled="!elapsed && !laps.length" @click="reset">Сброс</Button>
       </div>
 
       <ol v-if="laps.length" class="grid gap-1 border-t pt-4 font-mono text-sm tabular-nums">

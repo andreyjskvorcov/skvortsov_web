@@ -4,19 +4,23 @@ import { Badge } from '@skvortsov/ui-react/badge';
 import { Button } from '@skvortsov/ui-react/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@skvortsov/ui-react/card';
 import { Input } from '@skvortsov/ui-react/input';
+import { createStorage } from '@skvortsov/shared/storage';
+import { useLocalStorage } from '@skvortsov/shared/react';
+import { plural } from '@skvortsov/shared/utils';
+import type { Todo } from './types';
 
-interface Todo {
-  id: number;
-  text: string;
-  done: boolean;
-}
+// Ключи вида todo-react:<key> — localStorage общий с сайтом и другими приложениями
+const storage = createStorage('todo-react');
+
+const initialTodos: Todo[] = [
+  { id: 1, text: 'Подключить Tailwind', done: true },
+  { id: 2, text: 'Добавить shadcn/ui', done: true },
+  { id: 3, text: 'Перенести свои проекты', done: false },
+];
 
 export default function App() {
-  const [todos, setTodos] = useState<Todo[]>([
-    { id: 1, text: 'Подключить Tailwind', done: true },
-    { id: 2, text: 'Добавить shadcn/ui', done: true },
-    { id: 3, text: 'Перенести свои проекты', done: false },
-  ]);
+  // Список сохраняется между перезагрузками и синхронизируется между вкладками
+  const [todos, setTodos] = useLocalStorage(storage, 'todos', initialTodos);
   const [text, setText] = useState('');
 
   const left = todos.filter((t) => !t.done).length;
@@ -40,7 +44,9 @@ export default function App() {
     <Card className="mx-auto max-w-md">
       <CardHeader className="flex items-center justify-between">
         <CardTitle>Задачи</CardTitle>
-        <Badge variant="secondary">Осталось: {left}</Badge>
+        <Badge variant="secondary">
+          {left} {plural(left, ['задача', 'задачи', 'задач'])}
+        </Badge>
       </CardHeader>
       <CardContent className="grid gap-4">
         <form className="flex gap-2" onSubmit={add}>

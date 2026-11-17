@@ -1,0 +1,23 @@
+{
+  "name": "@skvortsov/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Общий код без UI: localStorage, тема, утилиты, типы, хуки для React и Vue",
+  "sideEffects": false,
+  "exports": {
+    "./*": "./src/*/index.ts"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "vue": "^3.5.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  }
+}

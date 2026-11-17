@@ -12,13 +12,7 @@ import { buttonVariants } from '@skvortsov/ui-react/button';
 </button>
 
 <script>
-  const button = document.querySelector<HTMLButtonElement>('.theme-toggle');
+  import { toggleTheme } from '@skvortsov/shared/theme';
 
-  button?.addEventListener('click', () => {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    try {
-      localStorage.setItem('theme', next);
-    } catch {}
-  });
+  document.querySelector<HTMLButtonElement>('.theme-toggle')?.addEventListener('click', toggleTheme);
 </script>

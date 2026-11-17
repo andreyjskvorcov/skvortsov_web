@@ -1,8 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Check, RotateCcw, X } from 'lucide-react';
 import { cn } from 'cn';
 import { Badge } from '@skvortsov/ui-react/badge';
 import { Button } from '@skvortsov/ui-react/button';
+import { createStorage } from '@skvortsov/shared/storage';
+import { useLocalStorage } from '@skvortsov/shared/react';
 
 interface Props {
   /** Уникальный id вопроса на сайте — по нему сохраняется ответ */
@@ -17,32 +19,13 @@ interface Props {
   children?: ReactNode;
 }
 
-const storageKey = (id: string) => `quiz:${id}`;
+// Ответы хранятся под ключами quiz:<id> — тот же формат, что был до перехода на хранилище
+const storage = createStorage('quiz');
 
 export default function Quiz({ id, options, answer, explanation, children }: Props) {
-  const [selected, setSelected] = useState<number | null>(null);
-
-  // Читаем сохранённый ответ после гидрации, чтобы разметка совпала с серверной
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey(id));
-      if (saved !== null && Number(saved) < options.length) setSelected(Number(saved));
-    } catch {}
-  }, [id, options.length]);
-
-  function choose(index: number) {
-    setSelected(index);
-    try {
-      localStorage.setItem(storageKey(id), String(index));
-    } catch {}
-  }
-
-  function reset() {
-    setSelected(null);
-    try {
-      localStorage.removeItem(storageKey(id));
-    } catch {}
-  }
+  // Сохранённый ответ читается после гидрации — разметка совпадает с серверной
+  const [saved, choose, reset] = useLocalStorage<number | null>(storage, id, null);
+  const selected = typeof saved === 'number' && saved >= 0 && saved < options.length ? saved : null;
 
   const answered = selected !== null;
   const correct = selected === answer;
