@@ -1,0 +1,1147 @@
+---
+title: 'Виды API: REST, GraphQL, WebSocket и другие'
+description: Что такое API, основы HTTP, REST и fetch, слой работы с API, GraphQL, WebSocket, SSE, CORS, авторизация и типичные ошибки
+section: frontend
+order: 6
+level: middle
+tags: [api, http, rest, fetch, graphql, websocket, sse, cors]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+Почти любое фронтенд-приложение получает данные с сервера и отправляет их обратно. Договорённость о том,
+**как** это делать — какие адреса, какие запросы, какой формат ответа, — и называется API. Разберём основные виды API,
+чем они отличаются и как с ними работать из браузера.
+
+```js
+// Типичная задача фронтенда: получить данные и показать их
+const response = await fetch('https://api.example.com/v1/users/42');
+const user = await response.json();
+console.log(user.name);
+```
+
+## 1. Что такое API
+
+**API** (Application Programming Interface) — это набор правил, по которым одна программа обращается к другой.
+Вам не нужно знать, как программа устроена внутри: достаточно знать, какие вызовы она принимает и что возвращает.
+
+Во фронтенде слово «API» означает две разные вещи:
+
+| | Браузерные API | Сетевые (веб) API |
+| --- | --- | --- |
+| Где живут | Внутри браузера | На сервере, доступны по сети |
+| Примеры | DOM, `fetch`, `localStorage`, `setTimeout`, `Geolocation` | `GET /users`, `POST /orders`, GraphQL-эндпоинт |
+| Как вызвать | Обычный вызов функции или метода | HTTP-запрос или другое сетевое соединение |
+| Кто описывает | Стандарты (WHATWG, W3C) | Команда бэкенда — в документации |
+
+```js
+// Браузерный API — функция, встроенная в браузер
+localStorage.setItem('theme', 'dark');
+document.querySelector('h1').textContent = 'Привет';
+
+// fetch — браузерный API для обращения к сетевому API
+const response = await fetch('https://api.example.com/v1/products');
+```
+
+Дальше в уроке речь пойдёт о **сетевых API** — о том, как фронтенд общается с сервером.
+
+## 2. Основы HTTP
+
+Большинство веб-API работает поверх HTTP. Клиент отправляет **запрос**, сервер возвращает **ответ**.
+
+### Запрос
+
+```http
+POST /v1/users HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer eyJhbGciOi...
+
+{"name": "Аня", "email": "anya@example.com"}
+```
+
+- **метод** — что сделать: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`…;
+- **URL** — с каким ресурсом: путь `/v1/users` и, при необходимости, query-параметры `?page=2`;
+- **заголовки** — метаданные: формат тела, ожидаемый формат ответа, авторизация;
+- **тело** — данные (у `GET` тела нет).
+
+### Ответ
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /v1/users/42
+
+{"id": 42, "name": "Аня", "email": "anya@example.com"}
+```
+
+- **статус** — трёхзначный код результата;
+- **заголовки** — тип тела, кеширование, куки и т. д.;
+- **тело** — сами данные (может отсутствовать).
+
+### Коды ответа
+
+Первая цифра задаёт группу:
+
+| Группа | Смысл |
+| --- | --- |
+| `1xx` | Информационные, во фронтенде почти не встречаются |
+| `2xx` | Успех |
+| `3xx` | Перенаправление или «используй кеш» |
+| `4xx` | Ошибка клиента — запрос неправильный |
+| `5xx` | Ошибка сервера — запрос нормальный, но сервер не справился |
+
+Коды, которые встречаются постоянно:
+
+| Код | Название | Когда |
+| --- | --- | --- |
+| `200` | OK | Успешный запрос, в теле — результат |
+| `201` | Created | Ресурс создан (обычно ответ на `POST`) |
+| `204` | No Content | Успех, но тела нет (часто ответ на `DELETE`) |
+| `301` | Moved Permanently | Ресурс навсегда переехал на другой URL |
+| `304` | Not Modified | Ответ на условный запрос: копия в кеше актуальна |
+| `400` | Bad Request | Запрос некорректный: сломанный JSON, неверные параметры |
+| `401` | Unauthorized | Нет действительных данных для входа: не залогинен, токен истёк |
+| `403` | Forbidden | Пользователь известен, но прав на действие нет |
+| `404` | Not Found | Ресурс не найден |
+| `409` | Conflict | Конфликт с текущим состоянием: например, email уже занят |
+| `422` | Unprocessable Content | Формат верный, но данные не прошли проверку |
+| `429` | Too Many Requests | Превышен лимит запросов, подождите (см. заголовок `Retry-After`) |
+| `500` | Internal Server Error | Непредвиденная ошибка на сервере |
+| `502` / `503` | Bad Gateway / Service Unavailable | Проблема с вышестоящим сервером / сервис временно недоступен |
+
+<Callout type="tip">
+  **401 или 403?** `401` — «я не знаю, кто вы»: нужно войти или обновить токен. `403` — «я знаю, кто вы, но вам нельзя»:
+  повторный вход не поможет. Название `Unauthorized` у кода 401 исторически неточное — по смыслу это «не аутентифицирован».
+</Callout>
+
+## 3. REST
+
+**REST** — самый распространённый стиль HTTP-API. Это не протокол и не стандарт, а набор принципов.
+Главная идея: API описывает **ресурсы** (пользователи, заказы, товары), у каждого ресурса свой URL,
+а действие задаётся **HTTP-методом**.
+
+### Ресурсы и URL
+
+```http
+GET    /v1/users              — список пользователей
+GET    /v1/users/42           — пользователь с id 42
+GET    /v1/users/42/orders    — заказы пользователя 42
+POST   /v1/users              — создать пользователя
+PATCH  /v1/users/42           — изменить часть полей
+DELETE /v1/users/42           — удалить
+```
+
+- в URL — существительные (обычно во множественном числе), а не глаголы: `/users`, а не `/getUsers`;
+- вложенность показывает связь: `/users/42/orders`;
+- версия в пути (`/v1/`) позволяет менять API, не ломая старых клиентов. Иногда версию передают заголовком.
+
+### Методы
+
+| Метод | Назначение | Безопасный | Идемпотентный |
+| --- | --- | --- | --- |
+| `GET` | Получить ресурс | Да | Да |
+| `POST` | Создать ресурс или выполнить действие | Нет | Нет |
+| `PUT` | Заменить ресурс целиком | Нет | Да |
+| `PATCH` | Изменить часть ресурса | Нет | Нет (не гарантируется) |
+| `DELETE` | Удалить ресурс | Нет | Да |
+
+- **Безопасный** метод не меняет данные на сервере — только читает. Его можно смело повторять, кешировать, предзагружать.
+- **Идемпотентный** метод даёт тот же эффект на сервере при одном и при десяти одинаковых запросах.
+  `DELETE /users/42` дважды — пользователь всё равно удалён (хотя второй ответ может быть `404`).
+  `POST /orders` дважды — два заказа.
+
+Идемпотентность важна для повторов: идемпотентный запрос можно безопасно повторить после обрыва сети,
+а повтор `POST` может создать дубль. Разница `PUT` и `PATCH`: в `PUT` отправляют ресурс целиком
+(отсутствующие поля могут быть сброшены), в `PATCH` — только изменённые поля.
+
+### Query-параметры: фильтры, сортировка, пагинация
+
+```http
+GET /v1/products?category=books&sort=-price&page=2&limit=20
+```
+
+Конкретные имена параметров (`sort`, `order`, `limit`, `per_page`…) каждый API выбирает сам — смотрите документацию.
+Для пагинации есть два основных подхода:
+
+| | page / limit (offset) | Курсор |
+| --- | --- | --- |
+| Запрос | `?page=3&limit=20` | `?cursor=abc123&limit=20` |
+| Ответ | Массив, иногда общее количество | Элементы и `nextCursor` для следующей страницы |
+| Плюсы | Просто, можно перейти на любую страницу | Стабильно при вставке и удалении элементов, быстро на больших данных |
+| Минусы | Если данные меняются, элементы «съезжают» между страницами | Нельзя прыгнуть сразу на 10-ю страницу |
+
+Курсорная пагинация типична для лент и бесконечной прокрутки, page/limit — для таблиц с номерами страниц.
+
+### Заголовки, которые нужно знать
+
+| Заголовок | Кто отправляет | Зачем |
+| --- | --- | --- |
+| `Content-Type: application/json` | Тот, кто отправляет тело | Формат тела запроса или ответа |
+| `Accept: application/json` | Клиент | Какой формат ответа клиент ожидает |
+| `Authorization: Bearer <токен>` | Клиент | Токен доступа |
+| `Location` | Сервер | URL созданного ресурса (с `201`) или адрес перенаправления |
+| `Retry-After` | Сервер | Через сколько можно повторить (с `429`, `503`) |
+
+## 4. fetch на практике
+
+Встроенный `fetch` возвращает промис с объектом `Response`. Главное, что нужно помнить:
+**fetch отклоняет промис только при сетевой ошибке** (нет соединения, CORS, отмена). Ответы `404` и `500` —
+это успешно полученные ответы, их нужно проверять через `response.ok` (это `true` для статусов 200–299).
+
+### GET с параметрами
+
+```js
+const params = new URLSearchParams({ q: 'кофе и чай', page: 2 });
+console.log(params.toString());
+// 'q=%D0%BA%D0%BE%D1%84%D0%B5+%D0%B8+%D1%87%D0%B0%D0%B9&page=2'
+
+const response = await fetch(`https://api.example.com/v1/products?${params}`);
+
+if (!response.ok) {
+  throw new Error(`HTTP ${response.status}`);
+}
+
+const products = await response.json();
+```
+
+`URLSearchParams` сам кодирует кириллицу и спецсимволы вроде `&` и `=`. Пробел он кодирует как `+` —
+это стандартный формат для query-строки, сервер прочитает его как пробел. (`encodeURIComponent` кодирует пробел как `%20`.)
+
+Можно работать и через объект `URL`:
+
+```js
+const url = new URL('https://api.example.com/v1/products');
+url.searchParams.set('q', 'a b');
+url.searchParams.append('tag', 'new');
+url.searchParams.append('tag', 'sale'); // повторяющийся параметр
+console.log(url.href);
+// 'https://api.example.com/v1/products?q=a+b&tag=new&tag=sale'
+```
+
+### POST с JSON
+
+```js
+const response = await fetch('https://api.example.com/v1/users', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'Аня', email: 'anya@example.com' }), // тело — строка
+});
+
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+const created = await response.json(); // { id: 42, name: 'Аня', ... }
+```
+
+Без `JSON.stringify` объект превратится в строку `'[object Object]'`, а без `Content-Type` сервер может не понять,
+что пришёл JSON.
+
+### PATCH и DELETE
+
+```js
+// PATCH — частичное изменение
+await fetch('https://api.example.com/v1/users/42', {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'new@example.com' }),
+});
+
+// DELETE — часто отвечает 204 без тела
+const response = await fetch('https://api.example.com/v1/users/42', { method: 'DELETE' });
+
+if (response.status === 204) {
+  console.log('Удалено');
+}
+```
+
+### Ловушки с телом ответа
+
+```js
+const response = await fetch('/v1/users/42', { method: 'DELETE' }); // 204 No Content
+
+await response.json(); // ✗ SyntaxError: тело пустое, это не JSON
+```
+
+- у `204` тела нет — `response.json()` бросит `SyntaxError`. Проверяйте статус или читайте `response.text()`;
+- при `500` сервер (или прокси) может вернуть HTML-страницу вместо JSON — `json()` тоже упадёт;
+- тело читается **один раз**: второй вызов `json()` или `text()` бросит `TypeError`;
+- у `GET` и `HEAD` не может быть `body` — `fetch` бросит `TypeError`.
+
+### Разбор ошибок от API
+
+Хорошие API присылают в теле ошибки подробности — их стоит показать пользователю:
+
+```http
+HTTP/1.1 422 Unprocessable Content
+Content-Type: application/json
+
+{"message": "Проверьте данные", "errors": {"email": "Некорректный email"}}
+```
+
+```js
+const response = await fetch('/v1/users', { method: 'POST', /* ... */ });
+
+if (!response.ok) {
+  // Тело ошибки может быть не JSON — подстрахуемся
+  const details = await response.json().catch(() => null);
+  throw new Error(details?.message ?? `HTTP ${response.status}`);
+}
+```
+
+## 5. Свой слой работы с API
+
+Писать `fetch` с заголовками и проверками в каждом компоненте — значит повторять одно и то же десятки раз.
+Обычно всё сетевое общение выносят в отдельный модуль: базовый URL, JSON, авторизация, ошибки — в одном месте.
+Класс `HttpError` — тот же приём, что в уроке [Асинхронные функции](/learn/js/async-await).
+
+```js
+// api.js
+const BASE_URL = 'https://api.example.com/v1';
+
+export class HttpError extends Error {
+  constructor(status, data) {
+    super(data?.message ?? `HTTP ${status}`);
+    this.name = 'HttpError';
+    this.status = status;
+    this.data = data; // тело ошибки от сервера
+  }
+}
+
+let authToken = null;
+export function setToken(token) {
+  authToken = token;
+}
+
+async function parseBody(response) {
+  if (response.status === 204) return null;
+  const text = await response.text();
+  if (!text) return null;
+  const type = response.headers.get('Content-Type') ?? '';
+  return type.includes('application/json') ? JSON.parse(text) : text;
+}
+
+export async function request(path, { method = 'GET', query, body, headers = {}, timeout = 10_000 } = {}) {
+  const url = new URL(BASE_URL + path);
+  for (const [key, value] of Object.entries(query ?? {})) {
+    if (value !== undefined && value !== null) url.searchParams.set(key, value);
+  }
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Accept: 'application/json',
+      ...(body !== undefined && { 'Content-Type': 'application/json' }),
+      ...(authToken && { Authorization: `Bearer ${authToken}` }),
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(timeout), // не ждём вечно
+  });
+
+  const data = await parseBody(response);
+  if (!response.ok) throw new HttpError(response.status, data);
+  return data;
+}
+
+export const api = {
+  get: (path, query) => request(path, { query }),
+  post: (path, body) => request(path, { method: 'POST', body }),
+  patch: (path, body) => request(path, { method: 'PATCH', body }),
+  delete: (path) => request(path, { method: 'DELETE' }),
+};
+```
+
+Использование:
+
+```js
+import { api, HttpError } from './api.js';
+
+try {
+  const todos = await api.get('/todos', { completed: false });
+  const todo = await api.post('/todos', { title: 'Купить хлеб' });
+  await api.delete(`/todos/${todo.id}`); // вернёт null — у 204 нет тела
+} catch (error) {
+  if (error instanceof HttpError && error.status === 401) {
+    redirectToLogin();
+  } else {
+    showError(error.message);
+  }
+}
+```
+
+<Callout type="info">
+  Тайм-аут здесь сделан через `AbortSignal.timeout`. Как отменять запросы вручную, например при уходе со страницы,
+  разобрано в уроке [AbortController](/learn/js/abort-controller). Где хранить загруженные данные — тема урока
+  [Стейт-менеджер](/learn/architecture/state-manager).
+</Callout>
+
+## 6. GraphQL
+
+В REST у каждого ресурса свой URL, и сервер решает, какие поля вернуть. Отсюда две проблемы:
+
+- **over-fetching** — нужно только имя пользователя, а приходит объект на 40 полей;
+- **under-fetching** — для одного экрана нужны пользователь, его заказы и отзывы: три запроса вместо одного.
+
+**GraphQL** — язык запросов, в котором **клиент сам описывает**, какие данные нужны. Обычно у API один эндпоинт
+(например, `/graphql`), а запросы отправляются методом `POST`.
+
+```graphql
+query GetUser($id: ID!) {
+  user(id: $id) {
+    name
+    orders(last: 3) {
+      id
+      total
+    }
+  }
+}
+```
+
+Ответ повторяет форму запроса — ровно те поля, которые запрошены:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"data": {"user": {"name": "Аня", "orders": [{"id": "7", "total": 1500}]}}}
+```
+
+Виды операций: `query` — чтение, `mutation` — изменение, `subscription` — подписка на события (обычно через WebSocket).
+
+### Запрос из браузера
+
+```js
+async function graphql(query, variables = {}) {
+  const response = await fetch('https://api.example.com/graphql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  const { data, errors } = await response.json();
+  // Ошибки GraphQL часто приходят со статусом 200 — проверяем массив errors
+  if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '));
+  return data;
+}
+
+const data = await graphql(
+  `query GetUser($id: ID!) { user(id: $id) { name } }`,
+  { id: '42' },
+);
+console.log(data.user.name);
+```
+
+<Callout type="warning">
+  В GraphQL статус `200` не означает успех. Сервер может вернуть `200` и одновременно `data` с `null` в части полей
+  и массив `errors`. Всегда проверяйте `errors`. Значения подставляйте через `variables`, а не склеивайте в строку запроса.
+</Callout>
+
+На практике с GraphQL обычно работают через клиентские библиотеки (Apollo Client, urql и другие): они берут на себя кеш,
+состояние загрузки и типизацию.
+
+## 7. WebSocket
+
+HTTP устроен как «запрос — ответ»: сервер не может сам что-то прислать клиенту. Для чатов, онлайн-игр, совместного
+редактирования нужен канал, по которому сообщения идут **в обе стороны в любой момент**. Это **WebSocket** —
+постоянное двустороннее соединение. Оно начинается как HTTP-запрос, а затем переключается на свой протокол.
+
+```js
+const socket = new WebSocket('wss://chat.example.com/rooms/1'); // wss:// — с шифрованием, как https
+
+socket.addEventListener('open', () => {
+  socket.send(JSON.stringify({ type: 'join', user: 'Аня' }));
+});
+
+socket.addEventListener('message', (event) => {
+  const message = JSON.parse(event.data); // данные приходят строкой (или бинарно)
+  console.log('Новое сообщение:', message);
+});
+
+socket.addEventListener('close', (event) => {
+  console.log('Соединение закрыто, код', event.code);
+});
+
+socket.addEventListener('error', () => {
+  console.log('Ошибка соединения');
+});
+
+// Позже
+socket.send(JSON.stringify({ type: 'message', text: 'Привет!' }));
+socket.close();
+```
+
+О чём придётся позаботиться самим:
+
+- **переподключение** — соединение рвётся (сеть, сон ноутбука, перезапуск сервера), а браузер сам не переподключается.
+  Повторяйте попытки с растущей паузой (exponential backoff), чтобы не заваливать сервер;
+- **отправка до открытия** — `send()` при `readyState === WebSocket.CONNECTING` бросит ошибку, сообщения нужно копить в очереди;
+- **формат сообщений** — протокол передаёт просто строки или байты, структуру (`type`, `payload`) договариваетесь сами;
+- **авторизация** — в браузерный `WebSocket` нельзя передать свои заголовки, поэтому обычно используют куки
+  или передают токен первым сообщением.
+
+## 8. Server-Sent Events
+
+Если данные идут **только от сервера к клиенту** — уведомления, курсы валют, прогресс долгой задачи, —
+WebSocket избыточен. Есть **SSE** (Server-Sent Events): обычный HTTP-ответ, который не закрывается,
+а сервер дописывает в него события.
+
+```js
+const events = new EventSource('/v1/notifications/stream');
+
+events.addEventListener('message', (event) => {
+  const notification = JSON.parse(event.data);
+  showToast(notification.text);
+});
+
+// Именованные события, если сервер их отправляет
+events.addEventListener('price', (event) => {
+  updatePrice(JSON.parse(event.data));
+});
+
+// Остановить
+events.close();
+```
+
+Сервер отвечает с `Content-Type: text/event-stream` и пишет события в текстовом формате:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+
+data: {"text": "Новый заказ"}
+
+event: price
+data: {"symbol": "BTC", "value": 64000}
+
+```
+
+Плюсы SSE: работает поверх обычного HTTP, **браузер сам переподключается** при обрыве, API проще WebSocket.
+Минусы: только одно направление и только текст, а в `EventSource` нельзя передать свои заголовки.
+
+## 9. RPC, gRPC, tRPC и вебхуки
+
+**RPC** (Remote Procedure Call) — стиль, в котором API выглядит как набор функций, а не ресурсов:
+`POST /api/sendInvoice`, `POST /api/calculateDelivery`. Это нормально для действий, которые плохо ложатся на CRUD.
+Пример стандарта — JSON-RPC.
+
+- **gRPC** — RPC-фреймворк от Google: бинарный формат Protocol Buffers, HTTP/2, контракты в `.proto`-файлах.
+  Популярен для общения сервисов между собой. Из браузера напрямую не вызывается — нужен прокси (gRPC-Web).
+- **tRPC** — для проектов, где и фронтенд, и бэкенд на TypeScript: функции сервера вызываются с клиента
+  с полной типизацией, без ручного описания API.
+
+**Вебхук** (webhook) — обратная схема: не вы опрашиваете сервис, а сервис сам отправляет HTTP-запрос
+на ваш URL, когда что-то произошло (оплата прошла, пришёл коммит). Это общение **сервер — сервер**:
+фронтенд вебхуки не принимает, их обрабатывает ваш бэкенд.
+
+## 10. Сравнение
+
+| | Транспорт | Направление | Когда выбирать |
+| --- | --- | --- | --- |
+| REST | HTTP | Клиент → сервер, запрос — ответ | CRUD, большинство обычных API |
+| GraphQL | Обычно HTTP POST | Запрос — ответ (подписки — через WebSocket) | Сложные связанные данные, разные клиенты с разными нуждами |
+| RPC / gRPC / tRPC | HTTP, HTTP/2 | Запрос — ответ (gRPC умеет потоки) | Действия-команды, сервисы между собой, общий TypeScript |
+| WebSocket | Своё соединение поверх TCP | Двустороннее, постоянное | Чаты, игры, совместное редактирование |
+| SSE | HTTP | Только сервер → клиент | Уведомления, котировки, прогресс задачи |
+| Вебхуки | HTTP | Сервис → ваш сервер | Реакция бэкенда на события сторонних сервисов |
+
+## 11. CORS
+
+Браузер применяет **политику одного источника** (same-origin policy): код со страницы `https://shop.com`
+не может просто так **прочитать** ответ от `https://api.other.com`. Источник (origin) — это схема, домен и порт вместе:
+`http://localhost:3000` и `http://localhost:8080` — разные источники.
+
+**CORS** (Cross-Origin Resource Sharing) — механизм, которым **сервер** разрешает такие запросы через заголовки ответа:
+
+```http
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: https://shop.com
+Content-Type: application/json
+```
+
+Для «непростых» запросов — например, с `Content-Type: application/json`, заголовком `Authorization` или методами
+`PUT`, `PATCH`, `DELETE` — браузер сначала отправляет **preflight**-запрос `OPTIONS` и спрашивает разрешения:
+
+```http
+OPTIONS /v1/users HTTP/1.1
+Origin: https://shop.com
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: content-type, authorization
+```
+
+```http
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: https://shop.com
+Access-Control-Allow-Methods: GET, POST, PATCH, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+```
+
+Только если ответ разрешает, браузер отправит основной запрос.
+
+<Callout type="danger">
+  Ошибку CORS **нельзя исправить на фронтенде**. Это сервер должен ответить нужными заголовками. Режим
+  `mode: 'no-cors'` не помогает: ответ станет «непрозрачным», и прочитать его всё равно нельзя.
+  В разработке используют прокси dev-сервера (например, `server.proxy` в Vite): запрос уходит на свой источник,
+  а дальше его пересылает сервер, к которому CORS не применяется.
+</Callout>
+
+Важно: CORS — защита **в браузере**. Простой запрос может дойти до сервера и выполниться, браузер лишь не отдаст
+ответ вашему коду. А `curl` или Postman CORS вообще не проверяют.
+
+## 12. Авторизация: куки или токен
+
+| | Cookie сессии | Bearer-токен |
+| --- | --- | --- |
+| Как передаётся | Браузер сам прикладывает куку к запросам на её домен | Вы добавляете заголовок `Authorization: Bearer ...` |
+| Где хранится | В браузере; с флагом `HttpOnly` недоступна из JS | В памяти, `localStorage` или другом хранилище |
+| Главный риск | CSRF — защищаются флагом `SameSite` и CSRF-токенами | XSS — вредный скрипт может прочитать токен |
+| Кросс-домен | Нужны `credentials: 'include'` и разрешение сервера | Работает с любым доменом, если разрешён CORS |
+
+```js
+// Куки на другой домен по умолчанию не отправляются
+await fetch('https://api.example.com/v1/me', { credentials: 'include' });
+
+// Токен — явно в заголовке
+await fetch('https://api.example.com/v1/me', {
+  headers: { Authorization: `Bearer ${token}` },
+});
+```
+
+Плюсы и минусы хранилищ разобраны в уроке [Хранилища браузера](/learn/frontend/browser-storage).
+
+## 13. Моки API для разработки
+
+Бэкенд ещё не готов, а фронтенд писать нужно. Выручают моки:
+
+- **MSW** (Mock Service Worker) — перехватывает `fetch` прямо в браузере (через Service Worker) и в тестах,
+  код приложения при этом не меняется;
+- **json-server** — поднимает REST-API из одного JSON-файла: `GET`, `POST`, `PATCH`, `DELETE` работают «по-настоящему»;
+- **JSONPlaceholder** — публичный тестовый API с готовыми `/users`, `/posts`, `/todos`. Запросы на запись он имитирует:
+  ответ придёт, но данные не сохранятся.
+
+Чтобы заглянуть в реальные запросы, откройте вкладку Network в DevTools — подробнее в уроке
+[Отладка](/learn/frontend/debugging).
+
+## Как не надо
+
+```js
+// ✗ Секретный ключ в коде фронтенда — его увидит любой в DevTools или в бандле
+fetch(`https://api.payments.com/charge?key=sk_live_123`);
+
+// ✓ Секретные ключи живут на бэкенде, фронтенд обращается к своему серверу
+fetch('/v1/payments', { method: 'POST', body: JSON.stringify(order), headers });
+```
+
+```js
+// ✗ Не проверяем статус: при 404 в user окажется объект ошибки
+const user = await (await fetch('/v1/users/42')).json();
+
+// ✓ fetch не отклоняет промис на 4xx/5xx — проверяем сами
+const response = await fetch('/v1/users/42');
+if (!response.ok) throw new HttpError(response.status);
+const user = await response.json();
+```
+
+```js
+// ✗ Склейка строк: 'a&b' сломает запрос, кириллица и пробелы не закодированы
+fetch('/v1/search?q=' + query + '&city=' + city);
+
+// ✓ URLSearchParams всё закодирует
+fetch(`/v1/search?${new URLSearchParams({ q: query, city })}`);
+```
+
+```js
+// ✗ GET, который меняет данные: его могут повторить, закешировать, предзагрузить
+fetch('/v1/users/42/delete');
+
+// ✓ Изменения — через POST, PUT, PATCH, DELETE
+fetch('/v1/users/42', { method: 'DELETE' });
+```
+
+```js
+// ✗ N+1: запросы по одному, последовательно
+for (const id of ids) {
+  users.push(await api.get(`/users/${id}`));
+}
+
+// ✓ Лучше один запрос, если API умеет
+const users = await api.get('/users', { ids: ids.join(',') });
+// ✓ Или хотя бы параллельно
+const users = await Promise.all(ids.map((id) => api.get(`/users/${id}`)));
+```
+
+```js
+// ✗ Ошибки 401 и 429 показываем как «Что-то пошло не так»
+// ✓ 401 — обновить токен или отправить на вход; 429 — подождать (Retry-After) и не долбить сервер
+if (error.status === 401) redirectToLogin();
+if (error.status === 429) scheduleRetry(error);
+```
+
+```js
+// ✗ Запрос без тайм-аута и отмены: висит вечно, ответ может прийти после ухода со страницы
+const response = await fetch(url);
+
+// ✓ Тайм-аут или AbortController
+const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+```
+
+```js
+// ✗ В GraphQL 200 — значит всё хорошо
+const { data } = await response.json();
+
+// ✓ Проверяем errors
+const { data, errors } = await response.json();
+if (errors?.length) throw new Error(errors[0].message);
+```
+
+```js
+// ✗ Новое WebSocket-соединение на каждое сообщение
+function sendMessage(text) {
+  const socket = new WebSocket('wss://chat.example.com');
+  socket.onopen = () => socket.send(text);
+}
+
+// ✓ Одно соединение на всё приложение (или на комнату), переиспользуем его
+const socket = new WebSocket('wss://chat.example.com');
+function sendMessage(text) {
+  socket.send(text);
+}
+```
+
+## Шпаргалка
+
+| Задача | Решение |
+| --- | --- |
+| Получить данные | `GET`, ответ `200` |
+| Создать | `POST`, ответ `201` (+ `Location`) |
+| Заменить целиком / изменить часть | `PUT` / `PATCH` |
+| Удалить | `DELETE`, часто ответ `204` без тела |
+| Проверить успех | `response.ok` — `fetch` не отклоняет промис на 4xx/5xx |
+| Собрать query-строку | `URLSearchParams` или `url.searchParams` |
+| Отправить JSON | `JSON.stringify(body)` + `Content-Type: application/json` |
+| Тайм-аут | `signal: AbortSignal.timeout(ms)` |
+| Не залогинен / нет прав | `401` / `403` |
+| Гибкая выборка полей | GraphQL, проверять `errors` |
+| Двусторонний поток | WebSocket + переподключение с backoff |
+| Поток от сервера | SSE, `EventSource` |
+| Ошибка CORS | Настраивается на сервере, в разработке — прокси |
+
+## Проверь себя
+
+<Quiz
+  client:visible
+  id="frontend/api-types/patch-method"
+  options={['GET', 'POST', 'PUT', 'PATCH']}
+  answer={3}
+>
+  Пользователь меняет в профиле только email. Какой метод подходит лучше всего для `/v1/users/42`?
+
+  <Fragment slot="explanation">
+    `PATCH` — частичное изменение: отправляем только изменённые поля. `PUT` заменяет ресурс целиком, и для него
+    нужно прислать все поля. `POST` обычно создаёт новый ресурс, а `GET` данные не меняет.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/api-types/fetch-404"
+  options={['Промис отклонится, сработает catch', 'Промис выполнится, response.ok === false', 'fetch вернёт null', 'response.json() вернёт undefined']}
+  answer={1}
+>
+  Что произойдёт, если сервер ответит `404`?
+
+  ```js
+  try {
+    const response = await fetch('/v1/users/999');
+    console.log(response.ok);
+  } catch {
+    console.log('catch');
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Для `fetch` любой полученный ответ — успех: промис выполняется, а `response.ok` будет `false`, `status` — `404`.
+    Промис отклоняется только при сетевой ошибке, блокировке CORS или отмене. Статус нужно проверять самим.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/api-types/401-vs-403"
+  options={['401 Unauthorized', '403 Forbidden', '404 Not Found', '400 Bad Request']}
+  answer={1}
+>
+  Пользователь вошёл в систему с действующим токеном и пытается открыть админку, но он не администратор.
+  Какой статус уместен?
+
+  <Fragment slot="explanation">
+    Сервер знает, кто это, но прав нет — это `403`. `401` означает, что действительных данных для входа нет
+    (не залогинен, токен истёк). Некоторые API отвечают `404`, чтобы не раскрывать само существование ресурса,
+    но по смыслу «нет прав» — это `403`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/api-types/idempotent"
+  options={['GET', 'PUT', 'DELETE', 'POST']}
+  answer={3}
+>
+  Какой метод **не** идемпотентный, то есть повторный одинаковый запрос может изменить результат на сервере?
+
+  <Fragment slot="explanation">
+    Два одинаковых `POST /orders` создадут два заказа. `GET` ничего не меняет, `PUT` с теми же данными
+    оставит ресурс в том же состоянии, а повторный `DELETE` не удалит ничего нового. Поэтому `POST` нельзя
+    бездумно повторять при обрыве сети.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/api-types/graphql-errors"
+  options={['Запрос успешен, user просто пустой', 'Запрос завершился ошибкой — её описание в errors', 'Это ошибка сети', 'fetch отклонит промис']}
+  answer={1}
+>
+  GraphQL-сервер ответил статусом `200` с таким телом. Что это значит?
+
+  ```json
+  {
+    "data": { "user": null },
+    "errors": [{ "message": "User not found", "path": ["user"] }]
+  }
+  ```
+
+  <Fragment slot="explanation">
+    В GraphQL ошибки выполнения обычно приходят в массиве `errors`, при этом HTTP-статус часто `200`.
+    Проверка `response.ok` здесь пройдёт — нужно отдельно смотреть на `errors`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/api-types/chat-transport"
+  options={['REST с опросом раз в минуту', 'WebSocket', 'Вебхуки', 'Server-Sent Events']}
+  answer={1}
+>
+  Делаем чат: пользователи отправляют сообщения и мгновенно получают чужие. Что подходит лучше всего?
+
+  <Fragment slot="explanation">
+    Чату нужен двусторонний канал в реальном времени — это WebSocket. SSE передаёт данные только от сервера,
+    вебхуки работают между серверами, а опрос раз в минуту — это не «мгновенно».
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/api-types/sse-notifications"
+  options={['Server-Sent Events', 'GraphQL mutation', 'Вебхук в браузер', 'PUT-запрос каждую секунду']}
+  answer={0}
+>
+  Нужно показывать уведомления и обновления курса валют. Клиент ничего не отправляет, только получает.
+  Какой вариант проще всего?
+
+  <Fragment slot="explanation">
+    Поток только от сервера к клиенту — задача для SSE: `EventSource` работает поверх HTTP и сам переподключается.
+    WebSocket тоже справится, но он сложнее и здесь избыточен.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/api-types/urlsearchparams"
+  options={["'q=a b&c'", "'q=a%20b&c'", "'q=a+b%26c'", "'q=a+b&c'"]}
+  answer={2}
+>
+  Что выведет код?
+
+  ```js
+  console.log(new URLSearchParams({ q: 'a b&c' }).toString());
+  ```
+
+  <Fragment slot="explanation">
+    `URLSearchParams` кодирует пробел как `+`, а `&` — как `%26`, чтобы он не стал разделителем параметров.
+    Сервер раскодирует значение обратно в `'a b&c'`. При склейке строк вручную `&c` превратился бы в отдельный параметр.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Сборка query-строки" level="easy">
+  Напишите функцию `buildQuery(params)`, которая превращает объект в query-строку.
+  Значения `undefined`, `null` и пустые строки пропускаются, массивы превращаются в повторяющиеся параметры.
+  Если параметров нет — возвращается пустая строка.
+
+  ```js
+  buildQuery({ q: 'кофе с молоком', page: 2, tag: ['new', 'sale'], sort: undefined, brand: null });
+  // '?q=%D0%BA%D0%BE%D1%84%D0%B5+%D1%81+%D0%BC%D0%BE%D0%BB%D0%BE%D0%BA%D0%BE%D0%BC&page=2&tag=new&tag=sale'
+
+  buildQuery({}); // ''
+  ```
+
+  <Fragment slot="hint">
+    У `URLSearchParams` есть метод `append`, который добавляет параметр, даже если такой ключ уже есть.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function buildQuery(params) {
+      const search = new URLSearchParams();
+
+      for (const [key, value] of Object.entries(params)) {
+        if (value === undefined || value === null || value === '') continue;
+
+        if (Array.isArray(value)) value.forEach((item) => search.append(key, item));
+        else search.append(key, value);
+      }
+
+      const query = search.toString();
+      return query ? `?${query}` : '';
+    }
+    ```
+
+    Если передать объект с `undefined` прямо в `new URLSearchParams(...)`, в строку попадёт `sort=undefined` —
+    поэтому пустые значения фильтруем сами. Кодирование кириллицы, пробелов и `&` берёт на себя `URLSearchParams`.
+  </Fragment>
+</Task>
+
+<Task title="CRUD для задач" level="medium">
+  Используя `https://jsonplaceholder.typicode.com/todos`, напишите функции `getTodos(userId)`, `getTodo(id)`,
+  `createTodo(todo)`, `updateTodo(id, changes)` и `deleteTodo(id)`. Каждая должна бросать ошибку при статусе
+  не из 2xx, а при ответе без тела возвращать `null`.
+
+  ```js
+  const todo = await createTodo({ title: 'Выучить REST', userId: 1 });
+  await updateTodo(1, { completed: true });
+  await deleteTodo(1);
+  const list = await getTodos(1);
+  ```
+
+  <Fragment slot="hint">
+    Вынесите общую часть — `fetch`, заголовки, проверку `ok` и разбор тела — во вспомогательную функцию.
+    Для частичного изменения используйте `PATCH`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const TODOS = 'https://jsonplaceholder.typicode.com/todos';
+
+    async function send(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...options.headers },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${options.method ?? 'GET'} ${url}`);
+      }
+      if (response.status === 204) return null;
+      return response.json();
+    }
+
+    const getTodos = (userId) => send(`${TODOS}?${new URLSearchParams({ userId })}`);
+    const getTodo = (id) => send(`${TODOS}/${id}`);
+    const createTodo = (todo) => send(TODOS, { method: 'POST', body: JSON.stringify(todo) });
+    const updateTodo = (id, changes) =>
+      send(`${TODOS}/${id}`, { method: 'PATCH', body: JSON.stringify(changes) });
+    const deleteTodo = (id) => send(`${TODOS}/${id}`, { method: 'DELETE' });
+    ```
+
+    JSONPlaceholder только имитирует запись: `createTodo` вернёт объект с новым `id`, но при следующем
+    `getTodo` его не будет. Для «настоящего» локального API подойдёт json-server.
+  </Fragment>
+</Task>
+
+<Task title="Обёртка request()" level="medium">
+  Напишите функцию `request(path, options)` для API с базовым URL `https://api.example.com/v1`. Она должна:
+
+  - принимать `method`, `query` (объект параметров) и `body` (объект, отправляется как JSON);
+  - добавлять `Authorization: Bearer ...`, если токен задан через `setToken(token)`;
+  - возвращать разобранный JSON, а для ответа без тела — `null`;
+  - при статусе не из 2xx бросать `HttpError` со свойствами `status` и `data` (тело ошибки).
+
+  ```js
+  setToken('abc');
+  const todos = await request('/todos', { query: { completed: false } });
+  await request('/todos', { method: 'POST', body: { title: 'Купить хлеб' } });
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const BASE_URL = 'https://api.example.com/v1';
+
+    class HttpError extends Error {
+      constructor(status, data) {
+        super(data?.message ?? `HTTP ${status}`);
+        this.name = 'HttpError';
+        this.status = status;
+        this.data = data;
+      }
+    }
+
+    let authToken = null;
+    function setToken(token) {
+      authToken = token;
+    }
+
+    async function parseBody(response) {
+      if (response.status === 204) return null;
+      const text = await response.text();
+      if (!text) return null;
+      const type = response.headers.get('Content-Type') ?? '';
+      return type.includes('application/json') ? JSON.parse(text) : text;
+    }
+
+    async function request(path, { method = 'GET', query, body, headers = {} } = {}) {
+      const url = new URL(BASE_URL + path);
+      for (const [key, value] of Object.entries(query ?? {})) {
+        if (value !== undefined && value !== null) url.searchParams.set(key, value);
+      }
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Accept: 'application/json',
+          ...(body !== undefined && { 'Content-Type': 'application/json' }),
+          ...(authToken && { Authorization: `Bearer ${authToken}` }),
+          ...headers,
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+
+      const data = await parseBody(response);
+      if (!response.ok) throw new HttpError(response.status, data);
+      return data;
+    }
+    ```
+
+    Тело читается через `text()`, а не сразу `json()`: так пустой ответ и ответ не в JSON не роняют разбор.
+    `new URL(BASE_URL + path)`, а не `new URL(path, BASE_URL)`: путь, начинающийся с `/`, при втором способе
+    отбросит `/v1` из базового адреса. Спред `...(условие && объект)` добавляет заголовок, только если условие истинно.
+  </Fragment>
+</Task>
+
+<Task title="Загрузить все страницы" level="medium">
+  API отдаёт список постранично: `GET /items?page=1&limit=10` возвращает массив до 10 элементов.
+  Напишите `loadAllPages(path, limit)`, которая с помощью `request` из предыдущей задачи загружает все страницы
+  и возвращает один общий массив. Последняя страница — та, где элементов меньше `limit`.
+
+  Бонус: напишите `loadAllByCursor(path)` для API, который отвечает объектом `{ items, nextCursor }`
+  и принимает параметр `cursor`; когда `nextCursor` равен `null`, страниц больше нет.
+
+  ```js
+  const items = await loadAllPages('/items', 10); // 23 элемента → 3 запроса
+  const feed = await loadAllByCursor('/feed');
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    async function loadAllPages(path, limit = 10) {
+      const all = [];
+
+      for (let page = 1; ; page++) {
+        const chunk = await request(path, { query: { page, limit } });
+        all.push(...chunk);
+        if (chunk.length < limit) return all;
+      }
+    }
+
+    async function loadAllByCursor(path) {
+      const all = [];
+      let cursor = null;
+
+      do {
+        const { items, nextCursor } = await request(path, { query: { cursor } });
+        all.push(...items);
+        cursor = nextCursor;
+      } while (cursor);
+
+      return all;
+    }
+    ```
+
+    Страницы грузятся последовательно: номер или курсор следующей страницы становится известен только после
+    предыдущего ответа. Если элементов ровно `limit * n`, понадобится ещё один запрос, который вернёт пустой массив.
+    В `loadAllByCursor` первый запрос уходит без `cursor`: `request` пропускает значения `null`.
+    Для очень больших списков лучше не грузить всё сразу, а подгружать по мере прокрутки.
+  </Fragment>
+</Task>
+
+<Task title="WebSocket с переподключением" level="hard">
+  Напишите функцию `createSocket(url, { onMessage })`, которая возвращает объект с методами `send(data)` и `close()`:
+
+  - сообщения отправляются и принимаются как JSON;
+  - если соединение оборвалось не по вызову `close()`, клиент переподключается через 1 с, 2 с, 4 с…
+    но не дольше 30 с между попытками, плюс небольшой случайный разброс;
+  - после успешного подключения пауза снова начинается с 1 с;
+  - сообщения, отправленные без открытого соединения, копятся в очереди и уходят после подключения.
+
+  ```js
+  const chat = createSocket('wss://chat.example.com', {
+    onMessage: (message) => console.log(message),
+  });
+
+  chat.send({ type: 'message', text: 'Привет' }); // уйдёт, когда соединение откроется
+  ```
+
+  <Fragment slot="hint">
+    Вынесите создание сокета в функцию `connect()` и вызывайте её из обработчика `close` через `setTimeout`.
+    Флаг «закрыто пользователем» отличит ручное закрытие от обрыва.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function createSocket(url, { onMessage, baseDelay = 1000, maxDelay = 30_000 } = {}) {
+      let socket;
+      let attempt = 0;
+      let timer = null;
+      let closedByUser = false;
+      const queue = []; // сообщения, отправленные без соединения
+
+      function connect() {
+        socket = new WebSocket(url);
+
+        socket.addEventListener('open', () => {
+          attempt = 0; // соединились — сбрасываем счётчик
+          while (queue.length > 0) socket.send(queue.shift());
+        });
+
+        socket.addEventListener('message', (event) => {
+          onMessage?.(JSON.parse(event.data));
+        });
+
+        socket.addEventListener('close', () => {
+          if (closedByUser) return;
+          // 1 с, 2 с, 4 с, 8 с… но не больше maxDelay, плюс случайный разброс
+          const delay = Math.min(baseDelay * 2 ** attempt, maxDelay) + Math.random() * baseDelay;
+          attempt++;
+          timer = setTimeout(connect, delay);
+        });
+      }
+
+      connect();
+
+      return {
+        send(data) {
+          const message = JSON.stringify(data);
+          if (socket.readyState === WebSocket.OPEN) socket.send(message);
+          else queue.push(message);
+        },
+        close() {
+          closedByUser = true;
+          clearTimeout(timer);
+          socket.close();
+        },
+      };
+    }
+    ```
+
+    Обработчик `error` не нужен для переподключения: после ошибки соединения браузер всё равно вызывает `close`.
+    Случайный разброс (jitter) нужен, чтобы после падения сервера тысячи клиентов не переподключались в одну и ту же секунду.
+    В реальном приложении стоит добавить heartbeat (периодический ping), чтобы замечать «тихо» умершие соединения,
+    и повторную подписку на данные после переподключения.
+  </Fragment>
+</Task>

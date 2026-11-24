@@ -1,0 +1,540 @@
+---
+title: Event loop и setTimeout
+description: Как JavaScript выполняет асинхронный код в одном потоке — стек вызовов, макрозадачи и микрозадачи; setTimeout, setInterval и порядок вывода
+section: js
+order: 22
+level: middle
+tags: [event loop, settimeout, async, microtasks]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+JavaScript выполняет код в **одном потоке**: в каждый момент времени работает только одна функция.
+При этом страница одновременно ждёт ответа сервера, тикает таймером и реагирует на клики. Как это возможно —
+объясняет **event loop** (цикл событий).
+
+## 1. Стек вызовов
+
+Синхронный код выполняется через **стек вызовов** (call stack). Вызванная функция кладётся на вершину стека,
+а когда завершается — снимается с неё:
+
+```js
+function multiply(a, b) {
+  return a * b;
+}
+
+function square(n) {
+  return multiply(n, n);
+}
+
+console.log(square(4)); // 16
+```
+
+Стек по шагам: `console.log` ждёт `square` → `square` вызывает `multiply` → `multiply` возвращает `16` и снимается →
+`square` снимается → `console.log` выводит результат.
+
+Пока стек не пуст, ничего другого произойти не может: ни таймер, ни клик. Поэтому долгий синхронный код
+**замораживает страницу**:
+
+```js
+const start = Date.now();
+while (Date.now() - start < 3000) {} // 3 секунды страница не реагирует ни на что
+```
+
+## 2. setTimeout
+
+`setTimeout(callback, delay)` просит выполнить функцию **не раньше**, чем через `delay` миллисекунд:
+
+```js
+console.log('Начало');
+
+setTimeout(() => {
+  console.log('Прошла секунда');
+}, 1000);
+
+console.log('Конец');
+
+// 'Начало'
+// 'Конец'
+// 'Прошла секунда'
+```
+
+`setTimeout` не останавливает код: он регистрирует таймер и сразу возвращает управление. Отсчёт времени ведёт
+**браузер** (или Node.js), а не JavaScript. Когда время выйдет, колбэк встанет в очередь и выполнится,
+как только стек освободится.
+
+### Аргументы, id и отмена
+
+```js
+// Аргументы после задержки передаются в колбэк
+setTimeout((name) => console.log(`Привет, ${name}`), 1000, 'Аня');
+
+// setTimeout возвращает id таймера — по нему таймер можно отменить
+const timerId = setTimeout(() => console.log('Не выведется'), 1000);
+clearTimeout(timerId);
+```
+
+<Callout type="warning">
+  Передавайте в `setTimeout` **функцию**, а не результат её вызова. `setTimeout(greet(), 1000)` вызовет `greet` сразу,
+  а в таймер передаст то, что она вернула. Нужно `setTimeout(greet, 1000)` или `setTimeout(() => greet('Аня'), 1000)`.
+</Callout>
+
+### Задержка — это минимум, а не точное время
+
+`delay` — **минимальное** время до запуска. Если стек занят, колбэк подождёт:
+
+```js
+setTimeout(() => console.log('Таймер'), 0);
+
+const start = Date.now();
+while (Date.now() - start < 2000) {} // стек занят 2 секунды
+
+console.log('Цикл закончился');
+// 'Цикл закончился'
+// 'Таймер' — через 2 секунды, а не через 0 мс
+```
+
+Кроме того, браузеры сами увеличивают задержки: если таймеры вложены друг в друга больше пяти раз,
+задержка становится не меньше 4 мс, а во вкладках в фоне таймеры срабатывают не чаще раза в секунду.
+
+### setInterval
+
+`setInterval(callback, delay)` вызывает функцию **повторно** каждые `delay` мс, пока его не остановят через `clearInterval`:
+
+```js
+let count = 3;
+
+const intervalId = setInterval(() => {
+  console.log(count);
+  count--;
+
+  if (count === 0) {
+    clearInterval(intervalId);
+    console.log('Старт!');
+  }
+}, 1000);
+// 3, 2, 1, 'Старт!' — по одному в секунду
+```
+
+Похожего эффекта добиваются **рекурсивным `setTimeout`**: следующий таймер ставится, только когда предыдущий шаг
+закончился. Так шаги никогда не «наложатся», даже если один выполняется дольше интервала:
+
+```js
+function tick() {
+  console.log('тик');
+  setTimeout(tick, 1000); // следующий — через секунду после окончания этого
+}
+
+setTimeout(tick, 1000);
+```
+
+## 3. Как устроен event loop
+
+Кроме стека, у движка есть **две очереди**:
+
+| Очередь | Что туда попадает |
+|---|---|
+| **Макрозадачи** (task queue) | колбэки `setTimeout` и `setInterval`, события (клики, ввод), загрузка скриптов |
+| **Микрозадачи** (microtask queue) | обработчики промисов `then` / `catch` / `finally`, продолжение кода после `await`, `queueMicrotask` |
+
+Event loop повторяет по кругу:
+
+1. выполнить весь синхронный код, пока стек не опустеет;
+2. выполнить **все** микрозадачи — включая те, что добавились во время их выполнения;
+3. если нужно, перерисовать страницу;
+4. взять **одну** макрозадачу из очереди и выполнить её — и снова к шагу 2.
+
+Главное следствие: **микрозадачи всегда выполняются раньше следующей макрозадачи**. Промис, выполненный «прямо сейчас»,
+обработается раньше таймера с задержкой `0`:
+
+```js
+console.log('1 — синхронный код');
+
+setTimeout(() => console.log('4 — макрозадача'), 0);
+
+Promise.resolve().then(() => console.log('3 — микрозадача'));
+
+console.log('2 — синхронный код');
+
+// 1 — синхронный код
+// 2 — синхронный код
+// 3 — микрозадача
+// 4 — макрозадача
+```
+
+Разбор:
+
+1. `console.log('1…')` — выполняется сразу.
+2. `setTimeout` — колбэк уходит в очередь макрозадач.
+3. `Promise.resolve().then` — промис уже выполнен, обработчик уходит в очередь микрозадач.
+4. `console.log('2…')` — выполняется сразу. Стек пуст.
+5. Выполняются все микрозадачи — `3`.
+6. Берётся макрозадача — `4`.
+
+### Микрозадачи внутри задач
+
+Микрозадачи, добавленные внутри макрозадачи, выполнятся сразу после неё — до следующей макрозадачи:
+
+```js
+setTimeout(() => {
+  console.log('таймер 1');
+  Promise.resolve().then(() => console.log('микрозадача из таймера 1'));
+}, 0);
+
+setTimeout(() => console.log('таймер 2'), 0);
+
+// 'таймер 1'
+// 'микрозадача из таймера 1'
+// 'таймер 2'
+```
+
+<Callout type="danger">
+  Event loop переходит к макрозадачам, только когда очередь микрозадач **пуста**. Если микрозадача бесконечно
+  добавляет новые микрозадачи, таймеры, клики и перерисовка не наступят никогда — страница зависнет так же,
+  как от бесконечного цикла.
+</Callout>
+
+### А как же рендер
+
+Браузер перерисовывает страницу **между** задачами — не посреди синхронного кода. Поэтому изменения DOM в одном
+синхронном блоке пользователь увидит только итоговыми:
+
+```js
+box.style.background = 'red';
+box.style.background = 'blue'; // пользователь не увидит красный — рендера между строками не было
+```
+
+Для анимаций используют `requestAnimationFrame(callback)` — браузер вызовет колбэк прямо перед следующей перерисовкой.
+
+## 4. Как не замораживать страницу
+
+Если нужно обработать большой объём данных, разбейте работу на части и отдавайте управление браузеру между ними:
+
+```js
+function processInChunks(items, handle, chunkSize = 1000) {
+  let index = 0;
+
+  function nextChunk() {
+    const end = Math.min(index + chunkSize, items.length);
+    for (; index < end; index++) handle(items[index]);
+
+    if (index < items.length) setTimeout(nextChunk, 0); // между частями браузер успеет перерисовать и обработать клики
+  }
+
+  nextChunk();
+}
+```
+
+Если вычисления по-настоящему тяжёлые (обработка изображений, парсинг больших файлов), их переносят
+в **Web Worker** — отдельный поток, который не блокирует страницу.
+
+## Порядок выполнения: шпаргалка
+
+| Что | Когда выполняется |
+|---|---|
+| Синхронный код, исполнитель `new Promise` | сразу |
+| `then` / `catch` / `finally`, код после `await`, `queueMicrotask` | когда стек опустеет — все подряд |
+| `requestAnimationFrame` | перед перерисовкой |
+| `setTimeout`, `setInterval`, события | по одной за круг, после всех микрозадач |
+
+## Проверь себя
+
+<Quiz client:visible id="js/event-loop/timeout-zero" options={['A B C', 'A C B', 'B A C', 'C A B']} answer={1}>
+  В каком порядке выведутся буквы?
+
+  ```js
+  console.log('A');
+  setTimeout(() => console.log('B'), 0);
+  console.log('C');
+  ```
+
+  <Fragment slot="explanation">
+    Даже с задержкой `0` колбэк таймера — макрозадача: он выполнится только после всего синхронного кода.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-loop/micro-vs-macro" options={['1 2 3 4', '1 4 2 3', '1 4 3 2', '1 3 4 2']} answer={2}>
+  В каком порядке выведутся числа?
+
+  ```js
+  console.log(1);
+  setTimeout(() => console.log(2), 0);
+  Promise.resolve().then(() => console.log(3));
+  console.log(4);
+  ```
+
+  <Fragment slot="explanation">
+    Сначала синхронный код — `1` и `4`. Затем все микрозадачи — `3`. Только потом макрозадача таймера — `2`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/event-loop/full-order"
+  options={['A B C D E', 'A E B D C', 'A B E D C', 'A E D B C']}
+  answer={2}
+>
+  Что выведет код?
+
+  ```js
+  console.log('A');
+
+  setTimeout(() => console.log('C'), 0);
+
+  new Promise((resolve) => {
+    console.log('B');
+    resolve();
+  }).then(() => console.log('D'));
+
+  console.log('E');
+  ```
+
+  <Fragment slot="explanation">
+    Исполнитель промиса синхронный, поэтому `B` выводится сразу после `A`, затем `E`. Стек пуст — микрозадача `D`.
+    Последней — макрозадача `C`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/event-loop/micro-in-macro"
+  options={["'t1', 't2', 'p'", "'t1', 'p', 't2'", "'p', 't1', 't2'", "'t2', 't1', 'p'"]}
+  answer={1}
+>
+  Что выведет код?
+
+  ```js
+  setTimeout(() => {
+    console.log('t1');
+    Promise.resolve().then(() => console.log('p'));
+  }, 0);
+
+  setTimeout(() => console.log('t2'), 0);
+  ```
+
+  <Fragment slot="explanation">
+    После каждой макрозадачи event loop выполняет все накопившиеся микрозадачи. Промис из первого таймера обработается
+    раньше второго таймера.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-loop/var-loop" options={['0 1 2', '3 3 3', '2 2 2', 'undefined ×3']} answer={1}>
+  Что выведет код?
+
+  ```js
+  for (var i = 0; i < 3; i++) {
+    setTimeout(() => console.log(i), 0);
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Колбэки выполнятся после окончания цикла. У `var` одна переменная на весь цикл, и к этому моменту она уже `3`.
+    С `let` у каждой итерации своя переменная — вывелось бы `0 1 2` (подробнее в уроке [Замыкания](/learn/js/closures)).
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/event-loop/blocked-timer"
+  options={['Через 100 мс', 'Примерно через 1 секунду', 'Никогда', 'Сразу, до цикла']}
+  answer={1}
+>
+  Когда выведется «таймер»?
+
+  ```js
+  setTimeout(() => console.log('таймер'), 100);
+
+  const start = Date.now();
+  while (Date.now() - start < 1000) {}
+  ```
+
+  <Fragment slot="explanation">
+    Задержка — это минимум. Время таймера вышло через 100 мс, но стек занят циклом целую секунду,
+    и колбэк ждёт, пока он освободится.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/event-loop/call-instead-of-pass"
+  options={['Через 1 секунду', 'Сразу', 'Никогда', 'Ошибка']}
+  answer={1}
+>
+  Когда выведется «Привет»?
+
+  ```js
+  function greet() {
+    console.log('Привет');
+  }
+
+  setTimeout(greet(), 1000);
+  ```
+
+  <Fragment slot="explanation">
+    `greet()` — это вызов: функция выполнится сразу, а в `setTimeout` попадёт её результат `undefined`.
+    Чтобы отложить вызов, передайте саму функцию: `setTimeout(greet, 1000)`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Предскажите порядок" level="easy">
+  Не запуская код, запишите, в каком порядке появятся строки. Затем проверьте в консоли.
+
+  ```js
+  console.log('старт');
+
+  setTimeout(() => console.log('таймер'), 0);
+
+  Promise.resolve()
+    .then(() => console.log('промис 1'))
+    .then(() => console.log('промис 2'));
+
+  queueMicrotask(() => console.log('микрозадача'));
+
+  console.log('финиш');
+  ```
+
+  <Fragment slot="solution">
+    ```
+    старт
+    финиш
+    промис 1
+    микрозадача
+    промис 2
+    таймер
+    ```
+
+    Синхронный код — `старт` и `финиш`. Затем очередь микрозадач: в ней сначала `промис 1`, потом `микрозадача`.
+    `промис 2` попадает в очередь, только когда выполнится `промис 1`, — поэтому он после `микрозадача`.
+    Таймер — макрозадача, он последний.
+  </Fragment>
+</Task>
+
+<Task title="Обратный отсчёт" level="easy">
+  Напишите функцию `countdown(from)`, которая выводит числа от `from` до `1` раз в секунду, а затем «Старт!».
+  Сделайте два варианта: с `setInterval` и с рекурсивным `setTimeout`.
+
+  ```js
+  countdown(3); // 3 … 2 … 1 … 'Старт!'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    // setInterval
+    function countdown(from) {
+      let current = from;
+
+      const id = setInterval(() => {
+        if (current === 0) {
+          clearInterval(id);
+          console.log('Старт!');
+          return;
+        }
+        console.log(current--);
+      }, 1000);
+    }
+
+    // Рекурсивный setTimeout
+    function countdown2(current) {
+      if (current === 0) {
+        console.log('Старт!');
+        return;
+      }
+      console.log(current);
+      setTimeout(() => countdown2(current - 1), 1000);
+    }
+    ```
+
+    В первом варианте числа выводятся через секунду после вызова, во втором первое число — сразу.
+    Если нужно одинаково, добавьте в первый вариант вывод `from` до запуска интервала. Главное — не забыть
+    `clearInterval`, иначе интервал продолжит работать вечно.
+  </Fragment>
+</Task>
+
+<Task title="debounce" level="medium">
+  Напишите функцию `debounce(fn, ms)`. Она возвращает новую функцию, которая вызывает `fn` только через `ms` мс
+  **после последнего** вызова. Если её вызвали снова раньше — отсчёт начинается заново.
+  Так ограничивают поиск при вводе: запрос уходит, когда пользователь перестал печатать.
+
+  ```js
+  const search = debounce((query) => console.log('Ищем:', query), 300);
+
+  search('j');
+  search('ja');
+  search('jav'); // через 300 мс — один раз: 'Ищем: jav'
+  ```
+
+  <Fragment slot="hint">
+    Храните id таймера в замыкании. При каждом вызове отменяйте предыдущий таймер через `clearTimeout` и ставьте новый.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function debounce(fn, ms) {
+      let timerId;
+
+      return function (...args) {
+        clearTimeout(timerId);
+        timerId = setTimeout(() => fn.apply(this, args), ms);
+      };
+    }
+    ```
+
+    `timerId` живёт в замыкании между вызовами. Каждый новый вызов отменяет запланированный и ставит свежий таймер,
+    поэтому `fn` сработает только после паузы. `apply(this, args)` передаёт аргументы и сохраняет `this`,
+    если функцию используют как метод. Готовая версия есть в нашем пакете — `debounce` из `@skvortsov/shared/utils`.
+  </Fragment>
+</Task>
+
+<Task title="Сумма без заморозки" level="hard">
+  Функция считает сумму огромного массива и замораживает страницу. Перепишите её так, чтобы она обрабатывала массив
+  частями по 100 000 элементов, отдавая управление браузеру между частями, и возвращала промис с суммой.
+
+  ```js
+  const numbers = Array.from({ length: 10_000_000 }, (_, i) => i);
+
+  function sum(items) {
+    let total = 0;
+    for (const n of items) total += n;
+    return total;
+  }
+
+  sumInChunks(numbers).then((total) => console.log(total)); // 49999995000000
+  ```
+
+  <Fragment slot="hint">
+    Верните `new Promise`. Внутри — функция, которая обрабатывает одну часть и ставит следующую через `setTimeout(…, 0)`,
+    а после последней части вызывает `resolve`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function sumInChunks(items, chunkSize = 100_000) {
+      return new Promise((resolve) => {
+        let total = 0;
+        let index = 0;
+
+        function nextChunk() {
+          const end = Math.min(index + chunkSize, items.length);
+          for (; index < end; index++) total += items[index];
+
+          if (index < items.length) {
+            setTimeout(nextChunk, 0); // макрозадача — между частями браузер успеет обработать клики и рендер
+          } else {
+            resolve(total);
+          }
+        }
+
+        nextChunk();
+      });
+    }
+    ```
+
+    Почему не `Promise.resolve().then(nextChunk)`: это микрозадача, а event loop не переходит к рендеру и событиям,
+    пока очередь микрозадач не пуста. Страница осталась бы замороженной. Отдать управление браузеру может только
+    макрозадача — `setTimeout` (или `scheduler.yield()` в новых браузерах).
+  </Fragment>
+</Task>

@@ -1,0 +1,699 @@
+---
+title: Конструкторы
+description: Функции-конструкторы и new, методы в конструкторе и в prototype, конструкторы в классах, поля классов и типичные ошибки
+section: js
+order: 20
+level: middle
+tags: [constructor, new, class, prototype, objects]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Конструктор** — функция, которая создаёт однотипные объекты по одному шаблону. Вместо того чтобы
+каждый раз писать объект вручную, вы описываете его устройство один раз и вызываете конструктор через `new`.
+
+## Зачем нужны конструкторы
+
+Допустим, нужно несколько пользователей. Без конструктора каждый объект пишется руками:
+
+```js
+const user1 = { name: 'Andrey', age: 36 };
+const user2 = { name: 'Andrey', age: 20 };
+const user3 = { name: 'Ivan', age: 20 };
+```
+
+Пока объектов три — терпимо. Но если у пользователя появится новое поле или метод, править придётся
+каждый объект, а опечатка в имени свойства в одном из них (`nmae`) пройдёт незамеченной.
+Конструктор описывает форму объекта в одном месте:
+
+```js
+function User(name, age) {
+  this.name = name;
+  this.age = age;
+}
+
+const user1 = new User('Alexey', 35);
+const user2 = new User('Maria', 28);
+const user3 = new User('Ivan', 20);
+
+console.log(user1); // User { name: 'Alexey', age: 35 }
+```
+
+Обратите внимание: консоль показывает перед объектом имя `User` — она знает, каким конструктором он создан.
+
+## 1. Функции-конструкторы
+
+Функция-конструктор — обычная функция, которую вызывают через `new`. Два соглашения:
+
+- имя с **заглавной буквы** — знак, что функцию нужно вызывать через `new`;
+- внутри она записывает свойства в `this`.
+
+```js
+function Person(name, age) {
+  this.name = name;
+  this.age = age;
+
+  this.greet = function () {
+    console.log(`Привет, меня зовут ${this.name} и мне ${this.age} лет`);
+  };
+}
+
+const person1 = new Person('Андрей', 25);
+person1.greet(); // 'Привет, меня зовут Андрей и мне 25 лет'
+```
+
+### Что делает new
+
+Вызов `new Person('Андрей', 25)` выполняет четыре шага:
+
+1. создаёт новый пустой объект;
+2. связывает его с `Person.prototype` — оттуда объект получит общие методы (о них ниже);
+3. вызывает `Person`, подставив этот объект в `this`, — функция заполняет его свойствами;
+4. возвращает этот объект.
+
+```js
+function Person(name) {
+  // this = {} — шаги 1–2 сделал new
+  this.name = name;
+  // return this — шаг 4, неявно
+}
+```
+
+<Callout type="info">
+  Если конструктор сам вернёт **объект** через `return`, `new` вернёт его вместо `this`. Возврат примитива
+  (`return 5`) игнорируется — вернётся `this`. Писать `return` в конструкторе почти никогда не нужно.
+</Callout>
+
+### Проверка: instanceof
+
+Оператор `instanceof` проверяет, создан ли объект этим конструктором:
+
+```js
+const person = new Person('Андрей', 25);
+
+person instanceof Person; // true
+person instanceof Array; // false
+person.constructor === Person; // true — ссылка на конструктор
+```
+
+### Если забыть new
+
+Без `new` функция-конструктор — обычный вызов функции. Новый объект не создаётся, а `this` в строгом режиме —
+`undefined`:
+
+```js
+'use strict';
+
+const user = User('Аня', 20); // TypeError: Cannot set properties of undefined (setting 'name')
+```
+
+В нестрогом режиме ошибки не будет, но всё ещё хуже: `this` — глобальный объект, и функция молча создаст
+глобальные переменные `name` и `age`, а `user` будет `undefined`. Подробнее — в уроке [Ключевое слово this](/learn/js/this).
+
+## 2. Методы: в конструкторе или в prototype
+
+Метод, записанный в `this` внутри конструктора, создаётся **заново для каждого объекта**:
+
+```js
+function Person(name) {
+  this.name = name;
+  this.greet = function () {
+    console.log(`Привет, я ${this.name}`);
+  };
+}
+
+const a = new Person('Аня');
+const b = new Person('Иван');
+
+a.greet === b.greet; // false — две разные функции
+```
+
+Тысяча объектов — тысяча одинаковых копий функции. Поэтому общие методы кладут в **`prototype`** конструктора:
+
+```js
+function ProtoUser(name) {
+  this.name = name; // данные — у каждого свои
+}
+
+ProtoUser.prototype.sayHi = function () {
+  console.log(`Привет, я ${this.name}`); // метод — один на всех
+};
+
+const user = new ProtoUser('Alex');
+user.sayHi(); // 'Привет, я Alex'
+
+new ProtoUser('A').sayHi === new ProtoUser('B').sayHi; // true — одна и та же функция
+```
+
+У объекта `user` нет своего свойства `sayHi`. Когда его вызывают, JavaScript не находит метод в объекте и ищет
+его в `ProtoUser.prototype` — с ним объект связал `new` на шаге 2. `this` внутри — всё равно `user`,
+потому что вызов идёт через точку.
+
+| Где метод | Сколько копий | Когда использовать |
+|---|---|---|
+| `this.method = function…` в конструкторе | по одной на каждый объект | почти никогда; разве что метод должен замкнуть локальные переменные конструктора |
+| `Constructor.prototype.method = function…` | одна на всех | обычный способ для функций-конструкторов |
+
+## 3. Конструкторы в классах
+
+Классы (`class`) — современный и более удобный синтаксис для того же самого. Код внутри `constructor` выполняется
+при `new`, а методы, объявленные в теле класса, **автоматически попадают в prototype**:
+
+```js
+class Person {
+  constructor(name, age) {
+    this.name = name;
+    this.age = age;
+  }
+
+  greet() {
+    console.log(`Привет, меня зовут ${this.name} и мне ${this.age} лет`);
+  }
+}
+
+const person2 = new Person('Андрей', 32);
+person2.greet(); // 'Привет, меня зовут Андрей и мне 32 лет'
+
+new Person('A', 1).greet === new Person('B', 2).greet; // true — метод общий, как в prototype
+```
+
+Это то же самое, что функция-конструктор с методом в `prototype`, только записанное в одном месте.
+
+### Отличия класса от функции-конструктора
+
+| | Функция-конструктор | Класс |
+|---|---|---|
+| Вызов без `new` | работает как обычная функция (и ломается) | `TypeError: Class constructor … cannot be invoked without 'new'` |
+| Режим | как у файла | всегда строгий |
+| Методы | вручную в `prototype` | в теле класса — сразу в `prototype` |
+| Можно использовать до объявления | да — объявление функции поднимается | нет — `ReferenceError`, класс в «мёртвой зоне» до своей строки |
+
+В новом коде пишите классы. Функции-конструкторы нужно уметь читать: они встречаются в старом коде и библиотеках,
+а классы устроены на них.
+
+### Поля класса и стрелочные методы
+
+Свойства можно объявить прямо в теле класса — это **поля класса**. Они создаются у каждого объекта перед
+выполнением `constructor`:
+
+```js
+class Car {
+  wheels = 4; // поле — своё у каждого объекта
+
+  constructor(model, speed, price) {
+    this.model = model;
+    this.speed = speed;
+    this.price = price;
+  }
+
+  // Метод — один на всех, в prototype
+  displayInfo() {
+    return `Автомобиль: ${this.model}, скорость: ${this.speed} км/ч, цена: ${this.price} руб.`;
+  }
+}
+
+const renault = new Car('Renault', 200, 400000);
+console.log(renault.displayInfo()); // 'Автомобиль: Renault, скорость: 200 км/ч, цена: 400000 руб.'
+```
+
+Метод можно записать и как поле со стрелочной функцией — `displayInfo = () => { … }`. Разница важная:
+
+| | Метод `displayInfo() {}` | Поле `displayInfo = () => {}` |
+|---|---|---|
+| Копий | одна, в prototype | своя у каждого объекта |
+| `this` | зависит от вызова — теряется, если передать метод колбэком | всегда объект — стрелка берёт `this` из конструктора |
+
+```js
+class Timer {
+  seconds = 0;
+
+  tickMethod() {
+    this.seconds++;
+  }
+
+  tickArrow = () => {
+    this.seconds++;
+  };
+}
+
+const timer = new Timer();
+setInterval(timer.tickArrow, 1000); // работает: this — timer
+setInterval(timer.tickMethod, 1000); // TypeError: this — undefined, метод передан без объекта
+```
+
+Правило: по умолчанию пишите **обычные методы**. Стрелочное поле — когда метод будут передавать как колбэк
+(обработчик события, таймер) и вы не хотите писать `bind`.
+
+<Callout type="warning">
+  Запись `greet = function () { … }` в теле класса — это тоже поле, а не метод: функция копируется в каждый объект
+  и не попадает в prototype. Пользы от неё нет — пишите `greet() { … }`.
+</Callout>
+
+## Типичные ошибки
+
+### this вне конструктора и методов
+
+`this.name` работает только внутри конструктора или метода, вызванного через объект. Снаружи `this` — не товар:
+
+```js
+function Product(name, price) {
+  this.name = name;
+  this.price = price;
+}
+
+const iphone = new Product('iPhone', 750000);
+
+console.log(`Товар ${this.name}, цена ${this.price} руб.`); // ✗ в модуле — TypeError, в обычном скрипте — пустое имя
+console.log(`Товар ${iphone.name}, цена ${iphone.price} руб.`); // ✓ обращаемся к самому объекту
+```
+
+### Числа строками
+
+Цену `'750 000'` нельзя сложить, сравнить или умножить на скидку. Храните число, а форматируйте при выводе:
+
+```js
+const iphone = new Product('iPhone', 750000);
+
+const format = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 });
+format.format(iphone.price); // '750 000 ₽'
+```
+
+### Два конструктора с одним именем
+
+Если в одном файле дважды объявить `function User`, в обычном скрипте вторая молча заменит первую.
+В модуле это ошибка: `SyntaxError: Identifier 'User' has already been declared`. Одно имя — один конструктор.
+
+### Стрелочная функция как конструктор
+
+У стрелочных функций нет своего `this`, поэтому конструктором они быть не могут:
+
+```js
+const User = (name) => {
+  this.name = name;
+};
+
+new User('Аня'); // TypeError: User is not a constructor
+```
+
+## Проверь себя
+
+<Quiz client:visible id="js/constructor/new-steps" options={['undefined', "User { name: 'Аня' }", "'Аня'", 'TypeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  function User(name) {
+    this.name = name;
+  }
+
+  const user = new User('Аня');
+  console.log(user);
+  ```
+
+  <Fragment slot="explanation">
+    `new` создаёт объект, подставляет его в `this` и возвращает его, хотя `return` в функции нет.
+    Консоль показывает имя конструктора перед объектом.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/constructor/method-copies" options={['true', 'false', 'TypeError', 'undefined']} answer={1}>
+  Что выведет сравнение?
+
+  ```js
+  function Person(name) {
+    this.name = name;
+    this.greet = function () {
+      return `Привет, я ${this.name}`;
+    };
+  }
+
+  console.log(new Person('Аня').greet === new Person('Иван').greet);
+  ```
+
+  <Fragment slot="explanation">
+    Метод, записанный в `this` внутри конструктора, создаётся заново при каждом `new` — это две разные функции.
+    Чтобы метод был общим, его кладут в `Person.prototype` или пишут классом.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/constructor/class-method-shared" options={['true', 'false']} answer={0}>
+  А здесь?
+
+  ```js
+  class Person {
+    constructor(name) {
+      this.name = name;
+    }
+
+    greet() {
+      return `Привет, я ${this.name}`;
+    }
+  }
+
+  console.log(new Person('Аня').greet === new Person('Иван').greet);
+  ```
+
+  <Fragment slot="explanation">
+    Методы, объявленные в теле класса, попадают в `Person.prototype` — одна функция на все объекты.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/constructor/return-object"
+  options={["{ a: 1 }", "{ b: 2 }", "{ a: 1, b: 2 }", 'TypeError']}
+  answer={1}
+>
+  Что вернёт `new Weird()`?
+
+  ```js
+  function Weird() {
+    this.a = 1;
+    return { b: 2 };
+  }
+
+  new Weird();
+  ```
+
+  <Fragment slot="explanation">
+    Если конструктор возвращает объект, `new` отдаёт его вместо `this`. Объект с `a: 1` создался, но потерялся.
+    Если бы функция вернула примитив, например `return 5`, вернулся бы `this` — `{ a: 1 }`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/constructor/class-without-new"
+  options={["Объект { name: 'Аня' }", 'undefined', 'TypeError', 'Глобальная переменная name']}
+  answer={2}
+>
+  Что произойдёт?
+
+  ```js
+  class User {
+    constructor(name) {
+      this.name = name;
+    }
+  }
+
+  const user = User('Аня');
+  ```
+
+  <Fragment slot="explanation">
+    Класс нельзя вызвать без `new`: `TypeError: Class constructor User cannot be invoked without 'new'`.
+    Это одна из причин предпочитать классы — функция-конструктор без `new` ломается менее заметно.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/constructor/arrow-constructor"
+  options={["Объект { name: 'Аня' }", 'undefined', 'TypeError: User is not a constructor', 'SyntaxError']}
+  answer={2}
+>
+  Что произойдёт?
+
+  ```js
+  const User = (name) => {
+    this.name = name;
+  };
+
+  const user = new User('Аня');
+  ```
+
+  <Fragment slot="explanation">
+    У стрелочной функции нет своего `this` и `prototype`, поэтому её нельзя вызвать через `new`.
+    Конструктор — это обычная функция или класс.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/constructor/class-tdz" options={['Объект Car', 'undefined', 'ReferenceError', 'TypeError']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  const car = new Car();
+
+  class Car {}
+  ```
+
+  <Fragment slot="explanation">
+    Класс нельзя использовать до строки, где он объявлен: `ReferenceError: Cannot access 'Car' before initialization`.
+    Объявление функции-конструктора поднимается, поэтому с `function Car() {}` этот код сработал бы.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/constructor/arrow-field"
+  options={['a() и b() вернут 1', 'a() вернёт 1, b() — ошибка', 'a() — ошибка, b() вернёт 1', 'Обе — ошибка']}
+  answer={2}
+>
+  Что произойдёт, если вызвать `a()` и `b()` — каждую в отдельной программе?
+
+  ```js
+  class Counter {
+    value = 0;
+
+    incMethod() {
+      return ++this.value;
+    }
+
+    incArrow = () => ++this.value;
+  }
+
+  const counter = new Counter();
+  const a = counter.incMethod;
+  const b = counter.incArrow;
+
+  a(); // ?
+  b(); // ?
+  ```
+
+  <Fragment slot="explanation">
+    `a` — метод, вызванный без объекта: внутри класса строгий режим, `this` — `undefined`, и `this.value` даёт `TypeError`.
+    `b` — стрелочное поле: стрелка взяла `this` из конструктора, он всегда `counter`, поэтому вернётся `1`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Из литералов — в конструктор" level="easy">
+  Перепишите три объекта через функцию-конструктор `Book`. Метод `getInfo` должен быть один на все книги.
+
+  ```js
+  const book1 = { title: 'Мастер и Маргарита', author: 'Булгаков', year: 1967 };
+  const book2 = { title: 'Война и мир', author: 'Толстой', year: 1869 };
+  const book3 = { title: 'Идиот', author: 'Достоевский', year: 1869 };
+
+  // book1.getInfo() → 'Мастер и Маргарита (Булгаков, 1967)'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function Book(title, author, year) {
+      this.title = title;
+      this.author = author;
+      this.year = year;
+    }
+
+    Book.prototype.getInfo = function () {
+      return `${this.title} (${this.author}, ${this.year})`;
+    };
+
+    const book1 = new Book('Мастер и Маргарита', 'Булгаков', 1967);
+    const book2 = new Book('Война и мир', 'Толстой', 1869);
+    const book3 = new Book('Идиот', 'Достоевский', 1869);
+
+    book1.getInfo(); // 'Мастер и Маргарита (Булгаков, 1967)'
+    ```
+
+    Данные (`title`, `author`, `year`) — свои у каждой книги, поэтому записываются в `this`.
+    Метод одинаковый, поэтому он в `prototype`: одна функция на все объекты.
+  </Fragment>
+</Task>
+
+<Task title="Из функции — в класс" level="easy">
+  Перепишите конструктор `Product` классом. Цену храните числом, а в `displayInfo` выводите её с разделителями
+  разрядов.
+
+  ```js
+  function Product(name, price) {
+    this.name = name;
+    this.price = price;
+
+    this.displayInfo = () => {
+      return `Товар ${this.name}, цена ${this.price} руб`;
+    };
+  }
+
+  const iPhone = new Product('Iphone', '750 000');
+
+  // Нужно: new Product('iPhone', 750000).displayInfo() → 'Товар iPhone, цена 750 000 ₽'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const rub = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 });
+
+    class Product {
+      constructor(name, price) {
+        this.name = name;
+        this.price = price;
+      }
+
+      displayInfo() {
+        return `Товар ${this.name}, цена ${rub.format(this.price)}`;
+      }
+    }
+
+    new Product('iPhone', 750000).displayInfo(); // 'Товар iPhone, цена 750 000 ₽'
+    ```
+
+    Метод в теле класса — общий для всех товаров, в отличие от стрелки в `this`, которая копировалась бы в каждый объект.
+    Форматтер создан один раз снаружи класса: создавать `Intl.NumberFormat` при каждом вызове дороже.
+    `Intl` ставит между разрядами неразрывный пробел — если будете сравнивать строку в тестах, учитывайте это.
+  </Fragment>
+</Task>
+
+<Task title="Банковский счёт" level="medium">
+  Напишите класс `BankAccount`. Счёт создаётся с владельцем и начальным балансом (по умолчанию `0`).
+  Методы: `deposit(amount)`, `withdraw(amount)` и `getHistory()`. Снять больше, чем на счёте, или внести
+  не положительную сумму нельзя — бросайте ошибку. `deposit` и `withdraw` поддерживают цепочку вызовов.
+
+  ```js
+  const account = new BankAccount('Аня', 1000);
+
+  account.deposit(500).withdraw(200);
+  account.balance; // 1300
+  account.getHistory(); // [{ type: 'deposit', amount: 500 }, { type: 'withdraw', amount: 200 }]
+
+  account.withdraw(5000); // Error: Недостаточно средств
+  account.deposit(-10); // Error: Сумма должна быть больше нуля
+  ```
+
+  <Fragment slot="hint">
+    История — массив, который нужно создать в конструкторе: если положить его в `prototype`,
+    он станет общим для всех счетов. Для цепочки методы возвращают `this`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    class BankAccount {
+      constructor(owner, balance = 0) {
+        this.owner = owner;
+        this.balance = balance;
+        this.history = []; // у каждого счёта своя история
+      }
+
+      deposit(amount) {
+        if (amount <= 0) throw new Error('Сумма должна быть больше нуля');
+        this.balance += amount;
+        this.history.push({ type: 'deposit', amount });
+        return this;
+      }
+
+      withdraw(amount) {
+        if (amount <= 0) throw new Error('Сумма должна быть больше нуля');
+        if (amount > this.balance) throw new Error('Недостаточно средств');
+        this.balance -= amount;
+        this.history.push({ type: 'withdraw', amount });
+        return this;
+      }
+
+      getHistory() {
+        return [...this.history]; // копия — снаружи историю не испортить
+      }
+    }
+    ```
+
+    Все проверки стоят до изменения баланса: если сумма неверная, объект остаётся как был.
+    `getHistory` возвращает копию массива — иначе вызывающий код мог бы сделать `getHistory().push(…)` и подделать историю.
+  </Fragment>
+</Task>
+
+<Task title="Конструктор, который не сломать" level="medium">
+  Сделайте так, чтобы функция-конструктор `User` работала и с `new`, и без него.
+
+  ```js
+  function User(name) {
+    this.name = name;
+  }
+
+  new User('Аня'); // User { name: 'Аня' }
+  User('Иван'); // сейчас — ошибка или глобальная переменная; нужно: User { name: 'Иван' }
+  ```
+
+  <Fragment slot="hint">
+    Внутри функции есть `new.target` — это сама функция, если её вызвали через `new`, и `undefined`, если без него.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function User(name) {
+      if (!new.target) {
+        return new User(name); // вызвали без new — вызываем правильно сами
+      }
+
+      this.name = name;
+    }
+
+    User('Иван') instanceof User; // true
+    ```
+
+    Так устроены, например, встроенные `Array` и `Object`: `Array(3)` и `new Array(3)` работают одинаково.
+    Классам такая защита не нужна — без `new` они сразу бросают понятную ошибку.
+  </Fragment>
+</Task>
+
+<Task title="Свой new" level="hard">
+  Напишите функцию `myNew(Constructor, ...args)`, которая делает то же, что `new Constructor(...args)`:
+  создаёт объект, связанный с `Constructor.prototype`, вызывает конструктор с этим `this` и возвращает результат
+  по правилам `new`.
+
+  ```js
+  function Person(name) {
+    this.name = name;
+  }
+
+  Person.prototype.greet = function () {
+    return `Привет, я ${this.name}`;
+  };
+
+  const anna = myNew(Person, 'Аня');
+  anna.greet(); // 'Привет, я Аня'
+  anna instanceof Person; // true
+
+  function Weird() {
+    this.a = 1;
+    return { b: 2 };
+  }
+
+  myNew(Weird); // { b: 2 }
+  ```
+
+  <Fragment slot="hint">
+    `Object.create(proto)` создаёт пустой объект, связанный с `proto`. Вызвать функцию с нужным `this` поможет `apply`.
+    Не забудьте правило про `return` объекта.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function myNew(Constructor, ...args) {
+      // 1–2. Пустой объект, связанный с prototype
+      const obj = Object.create(Constructor.prototype);
+
+      // 3. Вызываем конструктор с this = obj
+      const result = Constructor.apply(obj, args);
+
+      // 4. Если конструктор вернул объект (или функцию) — отдаём его, иначе наш obj
+      const isObject = result !== null && (typeof result === 'object' || typeof result === 'function');
+      return isObject ? result : obj;
+    }
+    ```
+
+    Это ровно четыре шага `new` из начала урока. Проверка на `null` нужна потому, что `typeof null === 'object'`,
+    а `return null` в конструкторе игнорируется так же, как примитивы. С классами `myNew` не сработает —
+    их конструктор нельзя вызвать через `apply`, только через `new`.
+  </Fragment>
+</Task>

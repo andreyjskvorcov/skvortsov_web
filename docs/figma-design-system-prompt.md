@@ -80,6 +80,12 @@ Badge — variant: default | secondary | outline | destructive | ghost; высо
 
 Input — высота 36px, рамка input, радиус md; state: default | focus (ring) | disabled | error (рамка destructive); с плейсхолдером muted-foreground
 
+Textarea — как Input, минимальная высота 64px (≈3 строки), растягивается по высоте; те же состояния
+
+Checkbox — квадрат 16px, радиус 4, рамка input; checked: фон primary + галочка primary-foreground; state: default | focus (ring) | disabled | error; с подписью 14px справа
+
+Label — 14px Medium, над полем с отступом 8px; Field (Label + поле + текст ошибки 12px destructive под полем) — для форм
+
 Card — подложка card, рамка border, радиус xl, тень едва заметная; составные части: Header (Title 16px SemiBold + Description muted 14px), Content, Footer; внутренние отступы 24px, gap 24px
 
 Alert — радиус lg, рамка border, иконка 16px + Title + Description; variant: default | destructive

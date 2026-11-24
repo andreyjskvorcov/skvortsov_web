@@ -1,0 +1,591 @@
+---
+title: typeof, null, undefined и сравнение
+description: Как узнать тип значения, чем null отличается от undefined, когда сравнивать через ===, а когда сравнение не нужно или вредно
+section: js
+order: 24
+level: beginner
+tags: [typeof, 'null', 'undefined', comparison, types]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+В JavaScript переменная может хранить значение любого типа, и тип может меняться. Поэтому часто нужно проверить:
+что здесь лежит, есть ли значение вообще, равно ли оно другому. В уроке — как делать это правильно
+и когда проверка лишняя или даже вредная.
+
+## 1. Оператор typeof
+
+`typeof` возвращает **строку** с названием типа значения:
+
+```js
+typeof 42; // 'number'
+typeof 'привет'; // 'string'
+typeof true; // 'boolean'
+typeof undefined; // 'undefined'
+typeof 10n; // 'bigint'
+typeof Symbol('id'); // 'symbol'
+typeof { a: 1 }; // 'object'
+typeof function () {}; // 'function'
+```
+
+У `typeof` есть три особенности, на которых ошибаются чаще всего:
+
+| Выражение | Результат | Почему |
+|---|---|---|
+| `typeof null` | `'object'` | историческая ошибка первой версии языка, исправить её нельзя — сломается старый код |
+| `typeof [1, 2, 3]` | `'object'` | массив — это объект; проверяйте через `Array.isArray` |
+| `typeof NaN` | `'number'` | `NaN` («не число») — специальное значение числового типа |
+
+```js
+Array.isArray([1, 2]); // true
+Array.isArray({ length: 2 }); // false
+
+const value = null;
+typeof value === 'object' && value !== null; // правильная проверка «это объект»
+```
+
+### typeof и необъявленные переменные
+
+`typeof` — единственный способ обратиться к **необъявленной** переменной без ошибки:
+
+```js
+typeof notDeclared; // 'undefined' — ошибки нет
+notDeclared; // ReferenceError: notDeclared is not defined
+```
+
+Это используют, чтобы проверить, в какой среде работает код: `typeof window !== 'undefined'` — значит, в браузере.
+Но с `let` и `const` до их объявления `typeof` всё равно бросит `ReferenceError` (подробнее — в уроке
+[Переменные](/learn/js/variables)).
+
+## 2. undefined и null
+
+Оба значения означают «здесь ничего нет», но по-разному:
+
+| | `undefined` | `null` |
+|---|---|---|
+| Смысл | значение **не задано** | значение **намеренно пустое** |
+| Кто ставит | обычно сам язык | программист |
+| `typeof` | `'undefined'` | `'object'` |
+| В `JSON.stringify` | свойство пропадает | остаётся `null` |
+| Значение по умолчанию у параметра | срабатывает | не срабатывает |
+
+Где появляется `undefined` — язык ставит его сам:
+
+```js
+let name;
+console.log(name); // undefined — переменная объявлена, но не инициализирована
+
+const user = { name: 'Аня' };
+console.log(user.age); // undefined — такого свойства нет
+
+function greet(name) {
+  console.log(name);
+}
+greet(); // undefined — аргумент не передали
+
+function doNothing() {}
+console.log(doNothing()); // undefined — функция ничего не вернула
+```
+
+`null` пишут сами, чтобы сказать «значения нет, и это не ошибка»:
+
+```js
+let selectedUser = null; // пользователь ещё не выбран
+
+document.querySelector('.нет-такого'); // null — элемент не найден
+```
+
+Правило для своего кода: **`undefined` не присваивайте руками**, для «пусто» используйте `null`. Тогда по значению видно:
+`undefined` — забыли или ещё не дошли, `null` — пусто намеренно.
+
+### Разница, которая влияет на код
+
+```js
+// Значение по умолчанию подставляется только вместо undefined
+function setVolume(level = 50) {
+  return level;
+}
+
+setVolume(); // 50
+setVolume(undefined); // 50
+setVolume(null); // null — null считается переданным значением
+
+// JSON
+JSON.stringify({ a: undefined, b: null }); // '{"b":null}'
+```
+
+## 3. Проверка на «нет значения»
+
+Чтобы проверить сразу оба «пустых» значения, используют **нестрогое сравнение с `null`** — это единственный случай,
+где `==` полезен:
+
+```js
+value == null; // true только для null и undefined
+value != null; // есть какое-то значение — даже 0, '' или false
+```
+
+Для значений по умолчанию — оператор `??` (nullish coalescing). Он подставляет запасное значение **только
+для `null` и `undefined`**, в отличие от `||`, который срабатывает на **любое ложное** значение:
+
+```js
+const count = 0;
+
+count || 10; // 10 — ✗ 0 ложное, и || его заменил
+count ?? 10; // 0 — ✓ 0 — нормальное значение
+
+const title = '';
+title || 'Без названия'; // 'Без названия'
+title ?? 'Без названия'; // ''
+```
+
+Ложных значений восемь: `false`, `0`, `-0`, `0n`, `''`, `null`, `undefined`, `NaN`. Всё остальное — истинное,
+включая `'0'`, `'false'`, `[]` и `{}`.
+
+Для безопасного обращения к вложенным свойствам — **опциональная цепочка** `?.`:
+
+```js
+const user = { profile: null };
+
+user.profile.avatar; // TypeError: Cannot read properties of null
+user.profile?.avatar; // undefined — ошибки нет
+user.profile?.avatar ?? '/default-avatar.png'; // '/default-avatar.png'
+```
+
+## 4. Сравнение: === и ==
+
+| Оператор | Как сравнивает |
+|---|---|
+| `===` строгое | типы разные — сразу `false`; типы одинаковые — сравнивает значения |
+| `==` нестрогое | если типы разные, сначала **приводит** их к одному типу по сложным правилам |
+
+Правила приведения у `==` дают неожиданные результаты:
+
+```js
+0 == ''; // true
+0 == '0'; // true
+'' == '0'; // false — а только что оба были равны 0
+false == '0'; // true
+null == 0; // false
+null >= 0; // true — у >= свои правила приведения, не как у ==
+[] == false; // true
+```
+
+```js
+0 === ''; // false
+0 === '0'; // false
+false === '0'; // false
+```
+
+<Callout type="tip">
+  **Всегда используйте `===` и `!==`.** Единственное принятое исключение — `value == null` для проверки
+  сразу на `null` и `undefined`. В большинстве проектов это закреплено правилом линтера `eqeqeq`.
+</Callout>
+
+### NaN не равен ничему
+
+`NaN` — единственное значение, которое не равно **самому себе**:
+
+```js
+NaN === NaN; // false
+NaN == NaN; // false
+
+const result = Number('abc'); // NaN
+result === NaN; // false — так проверять бесполезно
+Number.isNaN(result); // true — ✓
+```
+
+Глобальная `isNaN` сначала приводит аргумент к числу: `isNaN('abc')` — `true`, хотя `'abc'` — не `NaN`, а строка.
+Используйте `Number.isNaN`.
+
+### Object.is
+
+`Object.is(a, b)` работает как `===`, но исправляет два крайних случая:
+
+```js
+Object.is(NaN, NaN); // true  (NaN === NaN — false)
+Object.is(0, -0); // false (0 === -0 — true)
+```
+
+В обычном коде хватает `===`, `Object.is` встречается в библиотеках — например, так React сравнивает состояние.
+
+### Объекты сравниваются по ссылке
+
+`===` для объектов и массивов проверяет, **один ли это объект**, а не одинаковое ли у них содержимое:
+
+```js
+{ a: 1 } === { a: 1 }; // false — два разных объекта
+[1, 2] === [1, 2]; // false
+
+const a = { x: 1 };
+const b = a; // та же ссылка
+a === b; // true
+```
+
+Чтобы сравнить содержимое, сравнивают нужные поля (`a.id === b.id`) или пишут функцию глубокого сравнения
+(задача ниже). `JSON.stringify(a) === JSON.stringify(b)` работает только для простых данных: порядок ключей влияет
+на результат, а `undefined`, функции и даты теряются или искажаются.
+
+## 5. Когда сравнивать не нужно
+
+### Не сравнивайте с true и false
+
+```js
+// ✗ Лишнее
+if (isAdmin === true) {}
+if (isValid === false) {}
+
+// ✓ Читается так же, как звучит
+if (isAdmin) {}
+if (!isValid) {}
+```
+
+Если в переменной точно `boolean`, сравнение ничего не добавляет. Явное `=== true` оправдано, только когда значение
+**может быть не булевым** и нужно отличить именно `true` — например, `'true'` из `localStorage`.
+
+### Не проверяйте «на всякий случай»
+
+```js
+// ✗ Лишние проверки
+if (users !== undefined && users !== null && users.length > 0) {}
+if (typeof name === 'string' && name !== '') {}
+
+// ✓ Если тип известен
+if (users?.length) {} // массив может отсутствовать
+if (name) {} // name — точно строка
+```
+
+Проверки типов нужны **на границах программы** — там, где данные приходят снаружи: от пользователя, из API,
+из `localStorage`, из параметров URL. Внутри программы, где значения вы создаёте сами, лишние проверки только
+прячут ошибки: если там оказался `null`, это баг, и лучше узнать о нём сразу.
+
+### Но не используйте истинность там, где важен 0 или пустая строка
+
+Короткая проверка `if (value)` отбрасывает **все** ложные значения. Это ошибка, если `0` или `''` — нормальные данные:
+
+```js
+function showPrice(price) {
+  if (!price) return 'Цена не указана'; // ✗ товар за 0 ₽ (бесплатный) — «Цена не указана»
+  return `${price} ₽`;
+}
+
+function showPriceFixed(price) {
+  if (price == null) return 'Цена не указана'; // ✓ только когда цены действительно нет
+  return `${price} ₽`;
+}
+```
+
+| Значение | Как проверить «есть ли значение» |
+|---|---|
+| строка, где `''` — это «пусто» | `if (str)` |
+| массив | `if (arr.length)` или `if (arr?.length)` |
+| число, где `0` — нормальное значение | `if (num != null)` или `Number.isFinite(num)` |
+| объект, который может быть `null` | `if (obj)` или `obj?.prop` |
+
+### Не сравнивайте дробные числа напрямую
+
+```js
+0.1 + 0.2 === 0.3; // false — 0.30000000000000004
+
+Math.abs(0.1 + 0.2 - 0.3) < Number.EPSILON; // true — сравнение с допуском
+```
+
+Деньги храните в целых копейках — тогда точное сравнение работает (подробнее в уроке [Математические операции](/learn/js/math-operations)).
+
+### Не сравнивайте даты через ===
+
+```js
+const a = new Date('2025-01-01');
+const b = new Date('2025-01-01');
+
+a === b; // false — разные объекты
+a.getTime() === b.getTime(); // true — сравниваем миллисекунды
+a < b; // работает: < и > приводят даты к числам
+```
+
+## Как проверить: шпаргалка
+
+| Что нужно узнать | Как |
+|---|---|
+| строка, число, булево, функция | `typeof x === 'string'` и т. д. |
+| массив | `Array.isArray(x)` |
+| объект (не `null` и не массив) | `typeof x === 'object' && x !== null && !Array.isArray(x)` |
+| `null` или `undefined` | `x == null` |
+| есть значение | `x != null` |
+| значение по умолчанию | `x ?? запасное` |
+| `NaN` | `Number.isNaN(x)` |
+| конечное число | `Number.isFinite(x)` |
+| экземпляр класса | `x instanceof Date` |
+| равенство | `===`, для объектов — по полям |
+
+## Проверь себя
+
+<Quiz client:visible id="js/types-comparison/typeof-null" options={["'null'", "'object'", "'undefined'", "'NaN'"]} answer={1}>
+  Что вернёт `typeof null`?
+
+  <Fragment slot="explanation">
+    `'object'` — историческая ошибка языка, которую нельзя исправить. Проверяйте `null` напрямую: `value === null`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/types-comparison/typeof-array" options={["'array'", "'object'", "'list'", "'undefined'"]} answer={1}>
+  Что вернёт `typeof [1, 2, 3]`?
+
+  <Fragment slot="explanation">
+    Массив — это объект, и `typeof` их не различает. Для массивов есть `Array.isArray`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/types-comparison/default-null" options={['50', 'null', 'undefined', '0']} answer={1}>
+  Что вернёт `setVolume(null)`?
+
+  ```js
+  function setVolume(level = 50) {
+    return level;
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Значение по умолчанию подставляется только вместо `undefined`. `null` — это переданное значение,
+    поэтому функция его и вернёт.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/types-comparison/or-vs-nullish" options={['0 и 0', '10 и 0', '0 и 10', '10 и 10']} answer={1}>
+  Что вернут выражения?
+
+  ```js
+  const count = 0;
+
+  count || 10;
+  count ?? 10;
+  ```
+
+  <Fragment slot="explanation">
+    `||` заменяет любое ложное значение, а `0` — ложное, поэтому `10`. `??` заменяет только `null` и `undefined`,
+    поэтому `0` остаётся.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/types-comparison/loose-equal" options={['true', 'false']} answer={0}>
+  Что вернёт `null == undefined`?
+
+  <Fragment slot="explanation">
+    По правилам `==` значения `null` и `undefined` равны друг другу — и больше ничему. Поэтому `value == null`
+    удобно проверяет сразу оба. А `null === undefined` — `false`: типы разные.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/types-comparison/nan" options={['true', 'false', 'NaN', 'TypeError']} answer={1}>
+  Что вернёт выражение?
+
+  ```js
+  const result = Number('abc');
+  result === NaN;
+  ```
+
+  <Fragment slot="explanation">
+    `NaN` не равен ничему, даже самому себе, поэтому сравнение всегда `false`. Проверяйте через `Number.isNaN(result)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/types-comparison/objects" options={['true', 'false']} answer={1}>
+  Что вернёт `{ id: 1 } === { id: 1 }`?
+
+  <Fragment slot="explanation">
+    Объекты сравниваются по ссылке. Здесь два разных объекта с одинаковым содержимым — результат `false`.
+    Сравнивайте нужные поля: `a.id === b.id`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/types-comparison/falsy-price"
+  options={["'0 ₽'", "'Цена не указана'", "'undefined ₽'", 'Ошибка']}
+  answer={1}
+>
+  Что вернёт `showPrice(0)`?
+
+  ```js
+  function showPrice(price) {
+    if (!price) return 'Цена не указана';
+    return `${price} ₽`;
+  }
+  ```
+
+  <Fragment slot="explanation">
+    `0` — ложное значение, и `!price` даёт `true`. Бесплатный товар показан как товар без цены.
+    Правильно проверять именно отсутствие значения: `price == null`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Точный тип" level="easy">
+  Напишите функцию `getType(value)`, которая работает как `typeof`, но возвращает `'null'` для `null`
+  и `'array'` для массивов.
+
+  ```js
+  getType(42); // 'number'
+  getType(null); // 'null'
+  getType([1, 2]); // 'array'
+  getType({}); // 'object'
+  getType(() => {}); // 'function'
+  getType(undefined); // 'undefined'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function getType(value) {
+      if (value === null) return 'null';
+      if (Array.isArray(value)) return 'array';
+      return typeof value;
+    }
+    ```
+
+    Сначала обрабатываем два случая, где `typeof` «ошибается», — остальное он определяет правильно.
+  </Fragment>
+</Task>
+
+<Task title="Почините значения по умолчанию" level="easy">
+  Функция собирает настройки плеера, но громкость `0` и пустая подпись заменяются значениями по умолчанию.
+  Исправьте.
+
+  ```js
+  function createPlayer(options) {
+    return {
+      volume: options.volume || 50,
+      caption: options.caption || 'Без названия',
+      autoplay: options.autoplay || false,
+    };
+  }
+
+  createPlayer({ volume: 0, caption: '' }); // нужно: { volume: 0, caption: '', autoplay: false }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function createPlayer(options) {
+      return {
+        volume: options.volume ?? 50,
+        caption: options.caption ?? 'Без названия',
+        autoplay: options.autoplay ?? false,
+      };
+    }
+    ```
+
+    `??` подставляет значение по умолчанию только когда настройки нет (`null` или `undefined`).
+    `0` и `''` — осознанный выбор пользователя, их нужно сохранить.
+  </Fragment>
+</Task>
+
+<Task title="Пустое значение" level="medium">
+  Напишите функцию `isEmpty(value)`. Пустыми считаются: `null`, `undefined`, строка из одних пробелов,
+  пустой массив и объект без собственных ключей. Числа и `false` пустыми **не** считаются.
+
+  ```js
+  isEmpty(null); // true
+  isEmpty('   '); // true
+  isEmpty([]); // true
+  isEmpty({}); // true
+  isEmpty(0); // false
+  isEmpty(false); // false
+  isEmpty('a'); // false
+  isEmpty([0]); // false
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function isEmpty(value) {
+      if (value == null) return true;
+      if (typeof value === 'string') return value.trim() === '';
+      if (Array.isArray(value)) return value.length === 0;
+      if (typeof value === 'object') return Object.keys(value).length === 0;
+      return false;
+    }
+    ```
+
+    Проверки идут от частного к общему: массив — тоже `object`, поэтому `Array.isArray` стоит раньше проверки объекта.
+    Обычное `!value` здесь не подходит: оно считает пустыми `0` и `false` и не считает пустыми `[]` и `{}`.
+  </Fragment>
+</Task>
+
+<Task title="Найдите лишние и опасные проверки" level="medium">
+  Перепишите функцию: уберите лишние сравнения и исправьте те, что работают неправильно.
+  `cart` — объект корзины из нашего кода, `cart.items` — всегда массив, `discount` — число или отсутствует.
+
+  ```js
+  function getTotal(cart, discount) {
+    if (cart.items !== undefined && cart.items !== null && cart.items.length > 0) {
+      let total = 0;
+      for (const item of cart.items) total += item.price;
+
+      if (discount) total -= discount;
+      if (cart.isPaid == true) return 0;
+      if (total === NaN) return 0;
+
+      return total;
+    }
+    return 0;
+  }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function getTotal(cart, discount = 0) {
+      if (cart.isPaid || cart.items.length === 0) return 0;
+
+      const total = cart.items.reduce((sum, item) => sum + item.price, 0) - discount;
+      return Number.isNaN(total) ? 0 : total;
+    }
+    ```
+
+    - `cart.items` — всегда массив: проверки на `undefined` и `null` лишние. Проверку на пустую корзину оставляем —
+      иначе скидка сделала бы сумму пустой корзины отрицательной.
+    - `if (discount)` работал, но `discount = 0` по умолчанию проще и читается без условия.
+    - `cart.isPaid == true` — нестрогое сравнение с `true`; достаточно `if (cart.isPaid)`.
+    - `total === NaN` — всегда `false`, проверка не работала. Нужен `Number.isNaN`.
+  </Fragment>
+</Task>
+
+<Task title="Глубокое сравнение" level="hard">
+  Напишите функцию `isEqual(a, b)`, которая сравнивает значения по содержимому: примитивы — как `Object.is`,
+  массивы и обычные объекты — рекурсивно, по всем ключам. Порядок ключей в объектах не важен.
+
+  ```js
+  isEqual({ a: 1, b: [1, 2] }, { b: [1, 2], a: 1 }); // true
+  isEqual([1, { x: 2 }], [1, { x: 3 }]); // false
+  isEqual(NaN, NaN); // true
+  isEqual({ a: 1 }, { a: 1, b: undefined }); // false
+  isEqual([1, 2], { 0: 1, 1: 2 }); // false
+  ```
+
+  <Fragment slot="hint">
+    Если оба значения не объекты (или одно из них `null`), сравните через `Object.is`. Иначе проверьте,
+    что оба — массивы или оба — не массивы, что у них одинаковые наборы ключей, и сравните значения по каждому ключу рекурсивно.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function isEqual(a, b) {
+      if (Object.is(a, b)) return true;
+
+      const bothObjects = typeof a === 'object' && a !== null && typeof b === 'object' && b !== null;
+      if (!bothObjects) return false;
+
+      if (Array.isArray(a) !== Array.isArray(b)) return false;
+
+      const keysA = Object.keys(a);
+      const keysB = Object.keys(b);
+      if (keysA.length !== keysB.length) return false;
+
+      return keysA.every((key) => Object.hasOwn(b, key) && isEqual(a[key], b[key]));
+    }
+    ```
+
+    `Object.is` в начале обрабатывает примитивы, `NaN` и случай «это один и тот же объект».
+    `Object.hasOwn` отличает отсутствующий ключ от ключа со значением `undefined`. Даты, `Map` и `Set` эта версия
+    сравнивает неверно — для них в реальных проектах берут готовые функции, например `isEqual` из lodash.
+  </Fragment>
+</Task>

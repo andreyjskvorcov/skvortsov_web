@@ -1,0 +1,922 @@
+---
+title: Service Worker и Web App Manifest
+description: Что такое PWA, чем манифест отличается от Service Worker, жизненный цикл SW, стратегии кэширования, офлайн-страница, обновление версий и типичные ошибки
+section: frontend
+order: 3
+level: advanced
+tags: [pwa, service-worker, manifest, cache, offline]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**PWA** (Progressive Web App) — обычный сайт, который умеет вести себя как приложение: устанавливаться
+на рабочий стол или домашний экран, открываться в своём окне и работать без сети. Отдельного «режима PWA» нет —
+это сумма двух независимых технологий:
+
+- **Web App Manifest** — JSON-файл, который *описывает* приложение: название, иконки, цвета, как открывать окно.
+- **Service Worker** — скрипт, который *выполняется* в фоне и перехватывает сетевые запросы страницы.
+
+Их часто путают, потому что они идут в паре. Но манифест — это паспорт приложения, а Service Worker — его
+сетевой прокси. Разберём каждый по отдельности, а потом сравним.
+
+## 1. Web App Manifest
+
+Манифест — статический JSON-файл. Браузер читает его, когда решает, можно ли установить сайт и как
+потом выглядит установленное приложение. Подключается он ссылкой в `<head>`: `<link rel="manifest" href="/manifest.webmanifest">`.
+
+```json
+{
+  "name": "Заметки — офлайн-блокнот",
+  "short_name": "Заметки",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1e40af",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+```
+
+| Поле | Что задаёт |
+|---|---|
+| `name` | Полное название — в диалоге установки, на заставке |
+| `short_name` | Короткое — под иконкой, где мало места |
+| `start_url` | Какой адрес открыть при запуске с иконки |
+| `scope` | Какие URL считаются «внутри приложения». Уход за пределы открывает обычный браузер или панель с адресом. По умолчанию — папка `start_url` |
+| `display` | Вид окна: `fullscreen`, `standalone` (без адресной строки), `minimal-ui`, `browser` |
+| `background_color` | Фон заставки, пока грузится страница |
+| `theme_color` | Цвет интерфейса вокруг окна (заголовок, строка состояния) |
+| `icons` | Иконки разных размеров; `purpose` уточняет назначение |
+
+Если браузер не поддерживает указанный `display`, он берёт следующий по цепочке
+`fullscreen` → `standalone` → `minimal-ui` → `browser`. `start_url` должен лежать внутри `scope`.
+
+### Maskable-иконки
+
+Разные системы обрезают иконки по-разному: в круг, в скруглённый квадрат, в «каплю». Обычная иконка
+(`purpose: "any"`, значение по умолчанию) показывается как есть — иногда на белой подложке. Иконка с
+`purpose: "maskable"` рисуется «под обрез»: фон заполняет весь квадрат, а всё важное лежит в центральном круге
+диаметром 80% стороны — эта безопасная зона не обрежется никакой маской.
+
+<Callout type="warning">
+  Не ставьте `"purpose": "any maskable"` на одну и ту же картинку. Обычная иконка с полями при обрезке как maskable
+  станет мелкой, а maskable-иконка без полей там, где маски нет, будет выглядеть обрезанной. Делайте две разные картинки.
+</Callout>
+
+### Чего манифест не делает
+
+Манифест — это **только описание**. В нём нет кода: он не кэширует файлы, не перехватывает запросы, не
+включает офлайн-режим. Если открыть установленное «приложение» без сети и без Service Worker, вы увидите
+обычную страницу браузера об ошибке сети. Требования к установке у браузеров разные: обычно нужны HTTPS, манифест
+с `name` или `short_name`, иконки и `start_url`. Раньше Chrome требовал ещё Service Worker с обработчиком `fetch`,
+сейчас это условие снято, но точные правила лучше сверять с документацией конкретного браузера.
+
+## 2. Service Worker: что это
+
+Service Worker (SW) — JavaScript-файл, который браузер запускает **отдельно от страницы**, в своём потоке.
+Он стоит между страницами сайта и сетью: каждый запрос подконтрольной страницы (HTML, CSS, картинки, `fetch` к API)
+сначала приходит в SW как событие `fetch`, и SW решает, что ответить — из сети, из кэша или собрать ответ сам.
+
+Важные ограничения:
+
+- **Нет доступа к DOM.** Нет `window`, `document`, `localStorage`, `sessionStorage`. Глобальный объект — `self`.
+- **Есть асинхронные API:** `fetch`, Cache Storage (`caches`), IndexedDB, `postMessage`. Про хранилища — в уроке
+  [Хранилища в браузере](/learn/frontend/browser-storage).
+- **Живёт недолго.** Браузер останавливает SW, когда тот простаивает, и запускает снова при следующем событии.
+  Глобальные переменные между запусками не сохраняются — состояние храните в Cache Storage или IndexedDB.
+- **Только HTTPS.** SW регистрируется лишь в безопасном контексте; исключение для разработки — `localhost`.
+- **Всё на промисах.** Синхронных API (вроде синхронного XHR) нет — пригодятся [промисы](/learn/js/promise)
+  и [async/await](/learn/js/async-await).
+
+Со страницей SW общается сообщениями: страница — через `navigator.serviceWorker.controller.postMessage(...)`,
+SW — через объекты `Client` из `self.clients`.
+
+### Регистрация
+
+Регистрирует SW сама страница:
+
+```js
+// main.js — обычный скрипт страницы
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('SW зарегистрирован, scope:', registration.scope);
+    } catch (error) {
+      console.error('Не удалось зарегистрировать SW:', error);
+    }
+  });
+}
+```
+
+- Проверка `'serviceWorker' in navigator` — feature detection: в старом браузере или по HTTP кода просто не будет.
+- Регистрация после `load` — чтобы установка SW и его предварительное кэширование не конкурировали с загрузкой самой страницы.
+- Повторный вызов `register` с тем же файлом безопасен: браузер не создаст второй SW.
+
+### Scope: какие страницы контролирует SW
+
+**Scope** — префикс URL, страницы под которым контролирует SW. По умолчанию это **папка, где лежит файл SW**:
+
+| Файл SW | Scope по умолчанию | Контролирует |
+|---|---|---|
+| `/sw.js` | `/` | весь сайт |
+| `/js/sw.js` | `/js/` | только страницы, чей путь начинается с `/js/` |
+| `/app/sw.js` | `/app/` | `/app/`, `/app/settings`, но не `/` и не `/about` |
+
+Scope можно сузить опцией: `register('/sw.js', { scope: '/app/' })`. Расширить его выше папки скрипта нельзя —
+это потребует HTTP-заголовка `Service-Worker-Allowed` на ответе с файлом SW. Поэтому `sw.js` почти всегда кладут в корень.
+
+## 3. Жизненный цикл
+
+У SW есть состояния, и понимать их нужно, чтобы не ловить «почему не обновилось»:
+
+```text
+register() → installing → installed (waiting) → activating → activated → обрабатывает fetch
+                 │                                              │
+            событие install                              событие activate
+```
+
+1. **install** — срабатывает один раз для каждой новой версии SW. Обычно здесь кладут в кэш базовые файлы (precache).
+2. **waiting** — если сайтом уже управляет старая версия SW, новая устанавливается и **ждёт**, пока не закроются все
+   вкладки под старой версией. Две версии одновременно сайтом не управляют.
+3. **activate** — новая версия становится активной. Здесь удаляют старые кэши.
+4. **fetch** — активный SW получает запросы подконтрольных страниц.
+
+```js
+// sw.js
+const CACHE = 'static-v1';
+const PRECACHE = ['/', '/styles.css', '/app.js', '/offline.html'];
+
+self.addEventListener('install', (event) => {
+  // не завершать установку, пока файлы не в кэше
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)));
+});
+
+self.addEventListener('activate', (event) => {
+  console.log('SW активирован');
+});
+
+self.addEventListener('fetch', (event) => {
+  // подменяем ответ: сначала кэш, если нет — сеть
+  event.respondWith(
+    caches.match(event.request).then((cached) => cached || fetch(event.request))
+  );
+});
+```
+
+### waitUntil и respondWith
+
+- **`event.waitUntil(promise)`** — «не останавливай меня и не переходи к следующему этапу, пока промис не завершится».
+  Если промис в `install` отклонится, установка провалится, и эта версия SW будет отброшена. `cache.addAll`
+  атомарен: если хоть один файл не загрузился, не сохранится ничего.
+- **`event.respondWith(promiseOrResponse)`** — «ответ на этот запрос дам я». Вызывать его нужно **синхронно**
+  внутри обработчика `fetch`, а не после `await` или в `setTimeout` — иначе браузер выбросит `InvalidStateError`.
+  Если `respondWith` не вызван, запрос идёт в сеть как обычно.
+
+<Callout type="info">
+  При самом первом визите страница, которая зарегистрировала SW, им **не контролируется**: она загрузилась раньше,
+  чем SW появился. Её запросы пойдут мимо SW до перезагрузки. Проверить, есть ли контроллер, можно через
+  `navigator.serviceWorker.controller` — на первом визите там `null`.
+</Callout>
+
+### Как SW обновляется
+
+Браузер проверяет файл SW при переходах на страницы в его scope, периодически в фоне и по вызову `registration.update()`. Если файл
+изменился хотя бы на байт — это новая версия: она проходит `install` и встаёт в `waiting`. Старая продолжает
+обслуживать открытые вкладки, пока их все не закроют. Обычная перезагрузка единственной вкладки обычно **не помогает**:
+новая страница загружается раньше, чем уходит старая, и её снова подхватывает старый SW.
+
+### skipWaiting и clients.claim
+
+Два способа ускорить смену версии:
+
+```js
+self.addEventListener('install', (event) => {
+  self.skipWaiting(); // не ждать закрытия вкладок — сразу activate
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)));
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim()); // взять под контроль уже открытые страницы без перезагрузки
+});
+```
+
+Это удобно, но опасно. После `skipWaiting` открытая вкладка продолжает выполнять **старый JS**, а её запросы
+обслуживает **новый SW** с новым кэшем. Старый код может запросить чанк `app.3f9a.js`, которого в новом кэше уже нет
+(а на сервере его удалили при деплое), — и приложение посреди работы сломается. Безопасный вариант — показать
+пользователю «Доступна новая версия» и переключать версию по его клику (см. задачу в конце урока).
+
+## 4. Стратегии кэширования
+
+SW сам решает, откуда брать ответ. Устоявшиеся схемы называются стратегиями. Во всех примерах ниже `CACHE` —
+имя кэша, а запросы, которые мы не хотим трогать, отсекаются заранее:
+
+```js
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  if (request.method !== 'GET') return;            // POST и прочее — мимо SW
+  if (url.origin !== self.location.origin) return; // чужие домены не трогаем
+
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(event));         // HTML-страницы
+  } else if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(cacheFirst(event));           // статика с хэшем в имени
+  } else {
+    event.respondWith(staleWhileRevalidate(event));
+  }
+});
+```
+
+`request.mode === 'navigate'` — признак перехода на страницу (запрос HTML-документа).
+
+### Cache first
+
+Сначала кэш, если там пусто — сеть, и результат кладём в кэш.
+
+```js
+async function cacheFirst(event) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(event.request);
+  if (cached) return cached;
+
+  const response = await fetch(event.request);
+  if (response.ok) {
+    // тело Response читается один раз: в кэш — копию, странице — оригинал
+    event.waitUntil(cache.put(event.request, response.clone()));
+  }
+  return response;
+}
+```
+
+Быстро и работает офлайн, но **никогда не обновляется**, пока запись в кэше. Годится только для файлов, которые
+не меняются под тем же URL: `app.3f9a.js`, шрифты, иконки.
+
+### Network first
+
+Сначала сеть; если сети нет — последняя сохранённая копия.
+
+```js
+async function networkFirst(event) {
+  const cache = await caches.open(CACHE);
+  try {
+    const response = await fetch(event.request);
+    if (response.ok) {
+      event.waitUntil(cache.put(event.request, response.clone()));
+    }
+    return response;
+  } catch (error) {
+    // fetch отклоняется только при сетевой ошибке; 404 и 500 — это обычные ответы
+    const cached = await cache.match(event.request);
+    return cached || Response.error();
+  }
+}
+```
+
+Пользователь всегда получает свежие данные, а без сети — хотя бы старые. Минус — на медленной сети приходится ждать
+ответа или таймаута.
+
+### Stale-while-revalidate
+
+Сразу отдать кэш, а параллельно сходить в сеть и обновить кэш на следующий раз.
+
+```js
+async function staleWhileRevalidate(event) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(event.request);
+
+  const network = fetch(event.request)
+    .then((response) => {
+      if (response.ok) return cache.put(event.request, response.clone()).then(() => response);
+      return response;
+    })
+    .catch(() => null);
+
+  // SW не должен остановиться, пока фоновое обновление не закончится
+  event.waitUntil(network);
+
+  return cached || (await network) || Response.error();
+}
+```
+
+Быстро, как cache first, но данные отстают максимум на одну загрузку.
+
+| Стратегия | Плюсы | Минусы | Для чего |
+|---|---|---|---|
+| Cache first | Мгновенно, офлайн | Не обновляется сама | Статика с хэшем в имени, шрифты, иконки |
+| Network first | Всегда свежее, есть офлайн-копия | Ждёт сеть | HTML-страницы, API, где важна актуальность |
+| Stale-while-revalidate | Мгновенно и обновляется | Показывает данные на шаг старее | Аватарки, ленты, справочники, CSS без хэша |
+| Network only | Никакого кэша | Нет офлайна | POST, авторизация, платежи, аналитика |
+| Cache only | Без сети вообще | Только то, что положили при install | Предкэшированный «скелет» приложения |
+
+<Callout type="tip">
+  `Response.error()` — «сетевая ошибка» для страницы: `fetch` на её стороне отклонится так же, как без интернета.
+  Для навигаций вместо этого лучше отдавать офлайн-страницу — см. ниже.
+</Callout>
+
+## 5. Версии кэшей и офлайн-страница
+
+### Версионирование и чистка
+
+Cache Storage не чистится сам. Каждое изменение набора файлов — новое имя кэша, а в `activate` удаляем всё, что
+не относится к текущей версии:
+
+```js
+const VERSION = 'v3';
+const STATIC_CACHE = `static-${VERSION}`;
+const RUNTIME_CACHE = `runtime-${VERSION}`;
+const CURRENT = [STATIC_CACHE, RUNTIME_CACHE];
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((names) =>
+      Promise.all(
+        names
+          .filter((name) => !CURRENT.includes(name))
+          .map((name) => caches.delete(name))
+      )
+    )
+  );
+});
+```
+
+Удалять в `activate`, а не в `install`, важно: пока новая версия ждёт, старая ещё работает со своим кэшем.
+
+### Офлайн-страница
+
+Без сети переход на незакэшированную страницу покажет ошибку браузера. Лучше — своя заглушка:
+
+```js
+const OFFLINE_URL = '/offline.html';
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.add(OFFLINE_URL)));
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode !== 'navigate') return;
+
+  event.respondWith(
+    fetch(event.request).catch(async () => {
+      const cache = await caches.open(STATIC_CACHE);
+      return cache.match(OFFLINE_URL);
+    })
+  );
+});
+```
+
+Файл `offline.html` должен быть самодостаточным: стили — внутри, картинки — тоже из кэша, иначе без сети они не загрузятся.
+
+## 6. Манифест vs Service Worker
+
+| | Web App Manifest | Service Worker |
+|---|---|---|
+| Что это | JSON-файл с описанием | JavaScript-файл с кодом |
+| Подключение | `<link rel="manifest">` в HTML | `navigator.serviceWorker.register()` из JS |
+| Выполняет код | Нет | Да, в отдельном потоке |
+| Отвечает за | Установку: имя, иконки, цвета, вид окна, стартовый URL | Сеть: перехват запросов, кэш, офлайн |
+| Офлайн-режим | Не даёт | Даёт |
+| Доступ к DOM | Не применимо | Нет |
+| HTTPS | Нужен для установки | Обязателен (кроме `localhost`) |
+| Обновление | Браузер перечитывает файл сам | Жизненный цикл: install → waiting → activate |
+| Можно без другого | Да — сайт установится, но без офлайна | Да — офлайн и кэш работают и без установки |
+
+## 7. Инструменты
+
+**DevTools → Application** (Chrome, Edge):
+
+- **Manifest** — разобранный манифест, иконки, предупреждения об ошибках установки.
+- **Service workers** — статус (activated, waiting), кнопки *Update* и *Unregister*, ссылка *skipWaiting* для ожидающей
+  версии. Галочка **Update on reload** ставит новую версию при каждой перезагрузке, **Bypass for network** пускает
+  запросы мимо SW, **Offline** имитирует отключение сети.
+- **Cache storage** — содержимое кэшей: можно посмотреть и удалить записи.
+- **Storage → Clear site data** — снести всё разом: SW, кэши, IndexedDB.
+
+Про работу с DevTools подробнее — в уроке [Отладка](/learn/frontend/debugging).
+
+**Workbox** — библиотека от Google, где стратегии уже готовы (`CacheFirst`, `NetworkFirst`, `StaleWhileRevalidate`),
+плюс предкэширование с версиями, срок жизни записей и лимиты размера. **vite-plugin-pwa** генерирует манифест и SW
+на базе Workbox прямо при сборке Vite-проекта. Руками SW пишут, чтобы понять механику; в проде чаще берут Workbox.
+
+## Как не надо
+
+### HTML через cache first
+
+```js
+// ✗ страница навсегда берётся из кэша — новый деплой пользователь не увидит
+if (request.mode === 'navigate') {
+  event.respondWith(caches.match(request).then((cached) => cached || fetch(request)));
+}
+
+// ✓ HTML — network first (или stale-while-revalidate), cache first — только для файлов с хэшем
+if (request.mode === 'navigate') {
+  event.respondWith(networkFirst(event));
+}
+```
+
+Хуже всего, когда в кэше застрял HTML со ссылками на старые чанки, которых на сервере уже нет: сайт ломается
+только у вернувшихся пользователей, и воспроизвести это локально сложно.
+
+### Не чистить старые кэши
+
+```js
+// ✗ меняем версию, но static-v1, static-v2… копятся у пользователя годами
+const CACHE = 'static-v4';
+
+// ✓ в activate удаляем всё, кроме текущих имён
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((names) =>
+      Promise.all(names.filter((name) => name !== CACHE).map((name) => caches.delete(name)))
+    )
+  );
+});
+```
+
+### Кэшировать POST и личные данные
+
+```js
+// ✗ cache.put для POST выбросит TypeError — Cache API хранит только GET
+// ✗ /api/profile в общем кэше — после выхода из аккаунта данные останутся на устройстве
+event.respondWith(cacheFirst(event)); // для всех запросов подряд
+
+// ✓ кэшируем только то, что можно показать любому, кто откроет этот браузер
+if (request.method !== 'GET') return;
+if (url.pathname.startsWith('/api/profile')) return; // network only
+```
+
+Ответы с авторизацией, корзины, платёжные данные — network only. Если личные данные всё же кэшируются для офлайна,
+их нужно удалять при выходе из аккаунта.
+
+### skipWaiting вслепую
+
+```js
+// ✗ новая версия перехватывает вкладку посреди работы, старый JS получает новый кэш
+self.addEventListener('install', () => self.skipWaiting());
+
+// ✓ переключаемся только по команде со страницы, когда пользователь согласился
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+```
+
+`skipWaiting` без вопросов приемлем, только если вы уверены, что старая страница с новым SW совместима
+(например, SW вообще ничего не кэширует).
+
+### Регистрировать SW в разработке
+
+```js
+// ✗ правите код, а браузер отдаёт старую версию из кэша SW
+navigator.serviceWorker.register('/sw.js');
+
+// ✓ регистрируем только в продакшен-сборке (пример для Vite)
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  navigator.serviceWorker.register('/sw.js');
+}
+```
+
+Если SW уже успел зарегистрироваться на `localhost`, он останется и после удаления кода регистрации —
+снимите его в DevTools → Application → Service workers → *Unregister*.
+
+### sw.js в подпапке
+
+```js
+// ✗ файл лежит в /static/js/ — значит, scope /static/js/, а страницы сайта он не видит
+navigator.serviceWorker.register('/static/js/sw.js');
+
+// ✗ расширить scope опцией тоже нельзя — регистрация упадёт с SecurityError
+navigator.serviceWorker.register('/static/js/sw.js', { scope: '/' });
+
+// ✓ файл в корне сайта
+navigator.serviceWorker.register('/sw.js');
+```
+
+### Ждать от SW доступа к странице
+
+```js
+// ✗ в SW нет ни DOM, ни localStorage
+self.addEventListener('activate', () => {
+  document.title = 'Обновлено';           // ReferenceError: document is not defined
+  localStorage.setItem('version', 'v3');  // ReferenceError: localStorage is not defined
+});
+
+// ✓ данные — в IndexedDB или Cache Storage, интерфейс — через сообщение странице
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window' }).then((clients) => {
+      clients.forEach((client) => client.postMessage({ type: 'VERSION', version: 'v3' }));
+    })
+  );
+});
+```
+
+### Кэшировать ответы без проверки
+
+```js
+// ✗ в кэш попадут 404, 500 и страница «ошибка сервера» — и будут отдаваться офлайн
+cache.put(request, response.clone());
+
+// ✓ сохраняем только успешные ответы
+if (response.ok) cache.put(request, response.clone());
+```
+
+## Шпаргалка
+
+| Задача | Как |
+|---|---|
+| Описать приложение для установки | `manifest.webmanifest` + `<link rel="manifest">` |
+| Зарегистрировать SW | `if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js')` |
+| Контролировать весь сайт | Файл SW в корне: `/sw.js` |
+| Предкэшировать файлы | `install` + `event.waitUntil(cache.addAll([...]))` |
+| Удалить старые кэши | `activate` + `caches.keys()` + `caches.delete()` |
+| Подменить ответ | `event.respondWith(...)` — синхронно в обработчике `fetch` |
+| Положить ответ в кэш | `cache.put(request, response.clone())` — только GET и `response.ok` |
+| Отличить переход на страницу | `request.mode === 'navigate'` |
+| Активировать новую версию сразу | `self.skipWaiting()` — лучше по согласию пользователя |
+| Взять под контроль открытые вкладки | `self.clients.claim()` в `activate` |
+| Узнать, что версия сменилась | событие `controllerchange` на `navigator.serviceWorker` |
+| Сообщение странице | `client.postMessage(...)`, со страницы — `registration.waiting.postMessage(...)` |
+
+## Проверь себя
+
+<Quiz
+  client:visible
+  id="frontend/service-worker-manifest/manifest-role"
+  options={[
+    'Кэширует файлы, перечисленные в icons, для офлайна',
+    'Описывает приложение для установки: имя, иконки, цвета, вид окна',
+    'Регистрирует Service Worker автоматически',
+    'Выполняет код при запуске приложения с иконки',
+  ]}
+  answer={1}
+>
+  Что делает Web App Manifest?
+
+  <Fragment slot="explanation">
+    Манифест — статический JSON без кода. Он ничего не кэширует и не регистрирует, а только сообщает браузеру,
+    как выглядит и запускается установленное приложение. Офлайн и перехват запросов — работа Service Worker.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/service-worker-manifest/dom-access"
+  options={['Заголовок вкладки поменяется', 'ReferenceError: document is not defined', 'Поменяется заголовок у всех вкладок сайта', 'Ничего, строка молча проигнорируется']}
+  answer={1}
+>
+  Что произойдёт при выполнении этого кода в `sw.js`?
+
+  ```js
+  self.addEventListener('activate', () => {
+    document.title = 'Новая версия';
+  });
+  ```
+
+  <Fragment slot="explanation">
+    SW работает в отдельном потоке без DOM: `document`, `window` и `localStorage` там не определены.
+    Чтобы что-то поменять на странице, SW отправляет ей сообщение через `client.postMessage`, а страница сама меняет DOM.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/service-worker-manifest/scope"
+  options={['Весь сайт', 'Только страницы, чей путь начинается с /assets/', 'Только страницу, которая его зарегистрировала', 'Ничего — регистрация упадёт']}
+  answer={1}
+>
+  Какие страницы будет контролировать этот SW?
+
+  ```js
+  navigator.serviceWorker.register('/assets/sw.js');
+  ```
+
+  <Fragment slot="explanation">
+    Scope по умолчанию — папка, где лежит файл SW, то есть `/assets/`. Страницы `/`, `/about` и любые другие вне
+    этой папки он не видит. Для всего сайта файл кладут в корень: `/sw.js`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/service-worker-manifest/first-visit"
+  options={[
+    'Да, SW начинает перехватывать сразу после register()',
+    'Нет — эта страница загрузилась без SW и не контролируется им до перезагрузки',
+    'Да, но только запросы к картинкам',
+    'Нет — SW вообще не работает без установки приложения',
+  ]}
+  answer={1}
+>
+  Пользователь впервые открыл сайт. Страница зарегистрировала SW с обработчиком `fetch`, SW установился и активировался.
+  Пойдут ли через него `fetch`-запросы, которые эта же страница сделает через минуту?
+
+  <Fragment slot="explanation">
+    Страница загрузилась раньше, чем появился SW, поэтому `navigator.serviceWorker.controller` у неё — `null`
+    и её запросы идут мимо SW. Контроль начнётся после перезагрузки — или сразу, если SW вызовет `clients.claim()`
+    в `activate`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/service-worker-manifest/update-waiting"
+  options={[
+    'Сразу заработает новый SW',
+    'Новый SW установится и будет ждать (waiting), страницу по-прежнему обслуживает старый',
+    'Новый SW проигнорируется, пока не очистить кэш',
+    'Оба SW будут обрабатывать запросы по очереди',
+  ]}
+  answer={1}
+>
+  Вы задеплоили изменённый `sw.js` (без `skipWaiting`). У пользователя открыта одна вкладка сайта, он нажимает F5.
+  Что произойдёт?
+
+  <Fragment slot="explanation">
+    Браузер увидит, что файл изменился, и установит новую версию, но активирует её только когда не останется
+    вкладок под старой. При перезагрузке новая страница загружается до того, как уходит старая, и снова
+    достаётся старому SW. Новая версия заработает после закрытия всех вкладок, по `skipWaiting()` или по кнопке
+    *skipWaiting* в DevTools.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/service-worker-manifest/response-clone"
+  options={[
+    'Всё работает: ответ кэшируется и отдаётся странице',
+    'Тело Response читается один раз: кэш и страница не могут получить один и тот же объект — нужен response.clone()',
+    'Ответ закэшируется дважды',
+    'SyntaxError',
+  ]}
+  answer={1}
+>
+  Что не так с этим кодом?
+
+  ```js
+  self.addEventListener('fetch', (event) => {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        caches.open('v1').then((cache) => cache.put(event.request, response));
+        return response;
+      })
+    );
+  });
+  ```
+
+  <Fragment slot="explanation">
+    Тело `Response` — поток, его можно прочитать только один раз. Кто начнёт читать первым, тот его и заберёт,
+    второй получит `TypeError`. Здесь `cache.put` вызывается позже (внутри `then`), поэтому обычно страдает кэш:
+    браузер пишет, что тело ответа уже использовано, и в кэш ничего не попадает. Правильно —
+    `cache.put(request, response.clone())`, а оригинал вернуть странице.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/service-worker-manifest/strategy-choice"
+  options={['Cache first', 'Network first', 'Cache only', 'Network only']}
+  answer={1}
+>
+  Запрос `GET /api/exchange-rates`: курсы должны быть максимально свежими, но без сети лучше показать последние
+  известные, чем ничего. Какая стратегия подходит?
+
+  <Fragment slot="explanation">
+    Network first: при живой сети — свежий ответ (и копия в кэш), без сети — последняя сохранённая копия.
+    Cache first показывал бы старые курсы и при наличии сети, network only не дал бы ничего офлайн.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/service-worker-manifest/cache-post"
+  options={[
+    'Ответ сохранится, и повторный POST возьмётся из кэша',
+    'cache.put отклонится с TypeError — Cache API не хранит POST-запросы',
+    'Сохранится, но только если тело запроса пустое',
+    'Ответ сохранится под ключом GET-запроса с тем же URL',
+  ]}
+  answer={1}
+>
+  Что будет, если в обработчике `fetch` вызвать `cache.put(event.request, response.clone())` для запроса с методом `POST`?
+
+  <Fragment slot="explanation">
+    Cache API хранит только пары для GET-запросов, для остальных методов `cache.put` отклоняется с `TypeError`.
+    Поэтому в начале обработчика `fetch` ставят `if (request.method !== 'GET') return;` — такие запросы идут в сеть без SW.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Манифест для приложения" level="easy">
+  Напишите манифест для приложения «Трекер привычек»: короткое имя «Привычки», запуск с `/app/`, приложение
+  живёт только в разделе `/app/`, открывается в отдельном окне без адресной строки, белая заставка, тёмно-зелёный
+  цвет интерфейса `#14532d`. Иконки 192 и 512 плюс отдельная maskable-иконка. Подключите манифест к странице.
+
+  <Fragment slot="solution">
+    ```json
+    {
+      "name": "Трекер привычек",
+      "short_name": "Привычки",
+      "start_url": "/app/",
+      "scope": "/app/",
+      "display": "standalone",
+      "background_color": "#ffffff",
+      "theme_color": "#14532d",
+      "icons": [
+        { "src": "/app/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+        { "src": "/app/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+        { "src": "/app/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+      ]
+    }
+    ```
+
+    ```html
+    <link rel="manifest" href="/app/manifest.webmanifest" />
+    <meta name="theme-color" content="#14532d" />
+    ```
+
+    `scope` ограничивает приложение разделом `/app/`, `start_url` лежит внутри него. `display: standalone` —
+    окно без адресной строки. Maskable-иконка — отдельная картинка, а не `"any maskable"` на одной.
+    Мета-тег `theme-color` красит интерфейс браузера и до установки.
+  </Fragment>
+</Task>
+
+<Task title="Регистрация с проверкой поддержки" level="easy">
+  Зарегистрируйте `/sw.js` так, чтобы: в браузере без Service Worker не было ошибок; регистрация не мешала
+  загрузке страницы; в консоль выводился scope или ошибка; в консоли было видно, контролирует ли SW текущую страницу.
+
+  <Fragment slot="solution">
+    ```js
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const registration = await navigator.serviceWorker.register('/sw.js');
+          console.log('SW scope:', registration.scope);
+          console.log('Страница под контролем SW:', Boolean(navigator.serviceWorker.controller));
+        } catch (error) {
+          console.error('Регистрация SW не удалась:', error);
+        }
+      });
+    }
+    ```
+
+    Без поддержки код в `if` не выполнится. Регистрация после `load` не отнимает сеть у самой страницы.
+    `register` может отклониться (нет HTTPS, файл не найден, синтаксическая ошибка в SW), поэтому `try/catch`.
+    На первом визите `controller` будет `null` — это нормально.
+  </Fragment>
+</Task>
+
+<Task title="Network first с офлайн-страницей" level="medium">
+  Напишите `sw.js`: при установке закэшируйте `/offline.html`. Для переходов на страницы используйте network first:
+  успешный ответ кладите в кэш; без сети отдавайте сохранённую копию страницы, а если её нет — `/offline.html`.
+  Остальные запросы SW не трогает.
+
+  <Fragment slot="hint">
+    Переход на страницу — `request.mode === 'navigate'`. `fetch` отклоняется только при сетевой ошибке.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const CACHE = 'pages-v1';
+    const OFFLINE_URL = '/offline.html';
+
+    self.addEventListener('install', (event) => {
+      event.waitUntil(caches.open(CACHE).then((cache) => cache.add(OFFLINE_URL)));
+    });
+
+    self.addEventListener('fetch', (event) => {
+      if (event.request.mode !== 'navigate') return;
+      event.respondWith(handleNavigation(event));
+    });
+
+    async function handleNavigation(event) {
+      const cache = await caches.open(CACHE);
+      try {
+        const response = await fetch(event.request);
+        if (response.ok) {
+          event.waitUntil(cache.put(event.request, response.clone()));
+        }
+        return response;
+      } catch (error) {
+        const cached = await cache.match(event.request);
+        return cached || cache.match(OFFLINE_URL);
+      }
+    }
+    ```
+
+    `respondWith` вызывается синхронно, а вся асинхронная логика — внутри промиса, который он получает.
+    В кэш попадают только успешные ответы, копией через `clone()`. Ошибки 404 и 500 возвращаются как есть —
+    это не «нет сети». `event.waitUntil` не даёт браузеру остановить SW, пока запись в кэш не закончится.
+  </Fragment>
+</Task>
+
+<Task title="Чистка старых кэшей" level="medium">
+  В SW используются кэши `static-v4` и `images-v2`. У пользователей остались `static-v1`…`static-v3`, `images-v1`
+  и кэш `user-uploads`, который пишет другая часть приложения и который трогать нельзя. Напишите обработчик
+  `activate`, который удалит только устаревшие версии.
+
+  <Fragment slot="solution">
+    ```js
+    const CURRENT = ['static-v4', 'images-v2'];
+    const MANAGED_PREFIXES = ['static-', 'images-'];
+
+    self.addEventListener('activate', (event) => {
+      event.waitUntil(
+        caches.keys().then((names) =>
+          Promise.all(
+            names
+              .filter((name) => MANAGED_PREFIXES.some((prefix) => name.startsWith(prefix)))
+              .filter((name) => !CURRENT.includes(name))
+              .map((name) => caches.delete(name))
+          )
+        )
+      );
+    });
+    ```
+
+    Удаляем только кэши «своих» префиксов, которых нет в списке текущих: `user-uploads` не попадает в фильтр.
+    Чистка — в `activate`: к этому моменту старая версия SW уже ничего не обслуживает.
+    `waitUntil` держит активацию, пока все удаления не завершатся, — только после этого SW начнёт получать `fetch`.
+  </Fragment>
+</Task>
+
+<Task title="«Доступна новая версия»" level="hard">
+  Когда новая версия SW установилась и ждёт, покажите пользователю кнопку «Обновить». По клику новая версия
+  должна активироваться, а страница — перезагрузиться один раз. Учтите случаи: новая версия уже ждала до открытия
+  страницы; первый визит (контроллера нет) — это не обновление. Готовая функция `showUpdateBanner(onClick)` рисует
+  баннер и вызывает `onClick` по нажатию.
+
+  <Fragment slot="hint">
+    Пригодятся `registration.waiting`, событие `updatefound`, `registration.installing` и его `statechange`,
+    `postMessage` и `controllerchange`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    // main.js — страница
+    async function setupUpdates() {
+      if (!('serviceWorker' in navigator)) return;
+
+      // был ли контроллер при загрузке: если нет — это первый визит, а не обновление
+      const hadController = Boolean(navigator.serviceWorker.controller);
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      let refreshing = false;
+
+      function promptUser(worker) {
+        showUpdateBanner(() => {
+          worker.postMessage({ type: 'SKIP_WAITING' });
+        });
+      }
+
+      // новая версия уже ждала, когда открыли страницу
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        promptUser(registration.waiting);
+      }
+
+      // новая версия нашлась, пока страница открыта
+      registration.addEventListener('updatefound', () => {
+        const worker = registration.installing;
+        worker.addEventListener('statechange', () => {
+          // controller есть — значит, это обновление, а не первая установка
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            promptUser(worker);
+          }
+        });
+      });
+
+      // новая версия взяла управление — перезагружаемся один раз
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+    }
+
+    setupUpdates();
+    ```
+
+    ```js
+    // sw.js
+    self.addEventListener('message', (event) => {
+      if (event.data?.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+      }
+    });
+    ```
+
+    Состояние `installed` при наличии `controller` означает «новая версия установлена и ждёт». На первом визите
+    контроллера нет — баннер не нужен. По клику страница просит ожидающий SW вызвать `skipWaiting`, он активируется
+    и становится контроллером — срабатывает `controllerchange`. Проверка `hadController` не даёт перезагрузить
+    страницу на первом визите, если SW вызывает `clients.claim()`, а флаг `refreshing` — перезагрузиться дважды.
+    Событие придёт во все открытые вкладки сайта, и они перезагрузятся вместе — так ни одна не останется со старым JS
+    под новым SW. Если в приложении бывают несохранённые данные, вместо мгновенной перезагрузки покажите в остальных
+    вкладках просьбу обновить страницу.
+  </Fragment>
+</Task>

@@ -1,0 +1,933 @@
+---
+title: 'AbortController: отмена запросов и операций'
+description: Зачем отменять асинхронные операции, AbortController и AbortSignal, отмена fetch, таймауты, AbortSignal.any, снятие обработчиков и свои отменяемые функции
+section: js
+order: 26
+level: middle
+tags: [abort-controller, abort-signal, fetch, async, timeout, cancellation]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+[Промис](/learn/js/promise) нельзя отменить: однажды запущенный, он рано или поздно выполнится или отклонится.
+Но в интерфейсе отменять нужно постоянно — пользователь ушёл со страницы, нажал «Отмена», начал новый поиск.
+Для этого в браузере (и в Node.js) есть `AbortController` — стандартный способ сказать операции «стоп».
+
+```js
+const controller = new AbortController();
+
+fetch('/api/report', { signal: controller.signal })
+  .then((response) => response.json())
+  .catch((error) => console.log(error.name)); // 'AbortError'
+
+controller.abort(); // запрос прерван
+```
+
+## 1. Проблема: устаревшие ответы
+
+Самый частый случай — поиск по мере ввода. Пользователь печатает «а», затем «ал». Уходят два запроса.
+Если первый ответ медленнее второго, он придёт **последним** и перезапишет правильные результаты:
+
+```js
+input.addEventListener('input', async () => {
+  const response = await fetch(`/api/search?q=${input.value}`);
+  const results = await response.json();
+  renderResults(results); // ✗ кто ответил последним — тот и победил
+});
+
+// запрос «а»  ───────────────────────► ответ (200 мс)  → на экране результаты для «а»
+// запрос «ал» ────► ответ (20 мс)                       → затёрты
+```
+
+Это **гонка (race condition)**: порядок ответов не совпадает с порядком запросов. Похожие проблемы:
+
+- компонент закрыли, а запрос ещё идёт — ответ приходит и пытается обновить то, чего уже нет;
+- пользователь переключил вкладку фильтра, а данные старой вкладки «догоняют» новую;
+- запрос завис, и интерфейс бесконечно показывает спиннер.
+
+Во всех случаях нужно уметь **сказать операции, что её результат больше не нужен**.
+
+## 2. AbortController и AbortSignal
+
+Механизм состоит из двух объектов:
+
+| Объект | Роль | Кто держит |
+|---|---|---|
+| `AbortController` | «пульт»: умеет отменять | код, который решает, когда отменить |
+| `AbortSignal` | «лампочка»: сообщает, что отменили | операция, которую отменяют (`fetch`, ваша функция) |
+
+```js
+const controller = new AbortController();
+const { signal } = controller;
+
+console.log(signal.aborted); // false
+console.log(signal.reason); // undefined
+
+signal.addEventListener('abort', () => {
+  console.log('Отменено:', signal.reason);
+});
+
+controller.abort('Пользователь нажал «Отмена»');
+// 'Отменено: Пользователь нажал «Отмена»'
+
+console.log(signal.aborted); // true
+```
+
+### Что есть у сигнала
+
+| Свойство / метод | Что делает |
+|---|---|
+| `signal.aborted` | `true`, если операцию уже отменили |
+| `signal.reason` | причина отмены: то, что передали в `abort(reason)` |
+| событие `'abort'` | срабатывает один раз в момент отмены (синхронно, внутри вызова `abort()`) |
+| `signal.onabort` | то же, но через свойство |
+| `signal.throwIfAborted()` | бросает `signal.reason`, если сигнал отменён, иначе ничего не делает |
+
+Если вызвать `abort()` без аргумента, причиной станет `DOMException` с именем `'AbortError'`:
+
+```js
+const controller = new AbortController();
+controller.abort();
+
+console.log(controller.signal.reason.name); // 'AbortError'
+console.log(controller.signal.reason instanceof DOMException); // true
+```
+
+### Отмена — одноразовая
+
+Повторный `abort()` ничего не делает: событие не срабатывает второй раз, причина не меняется.
+
+```js
+const controller = new AbortController();
+controller.signal.addEventListener('abort', () => console.log('abort!'));
+
+controller.abort('первая');
+controller.abort('вторая'); // игнорируется
+
+console.log(controller.signal.reason); // 'первая'
+```
+
+Сигнал, который однажды стал `aborted`, остаётся таким навсегда. **Один контроллер — одна операция**:
+для нового запроса создавайте новый контроллер.
+
+<Callout type="info">
+  Обработчик `'abort'`, добавленный уже после отмены, не вызовется — событие уже произошло.
+  Поэтому в своих функциях сначала проверяйте `signal.aborted`, а потом подписывайтесь на событие.
+</Callout>
+
+## 3. Отмена fetch
+
+`fetch` принимает сигнал в опции `signal`. После `abort()` промис `fetch` отклоняется:
+
+```js
+const controller = new AbortController();
+
+setTimeout(() => controller.abort(), 100);
+
+try {
+  const response = await fetch('/api/slow', { signal: controller.signal });
+  const data = await response.json();
+} catch (error) {
+  console.log(error.name); // 'AbortError'
+  console.log(error instanceof DOMException); // true
+}
+```
+
+Что именно прилетит в `catch`, зависит от того, с чем вызвали `abort`:
+
+| Вызов | Чем отклонится `fetch` |
+|---|---|
+| `controller.abort()` | `DOMException` с `name === 'AbortError'` |
+| `controller.abort('Отмена')` | строкой `'Отмена'` — ровно тем, что передали |
+| `controller.abort(new Error('…'))` | этим объектом `Error` |
+| `AbortSignal.timeout(ms)` сработал | `DOMException` с `name === 'TimeoutError'` |
+
+Отмена работает и **после** получения заголовков: если вызвать `abort()`, пока тело ещё не прочитано,
+отклонится уже `response.json()` (тоже с `AbortError`). А вот после того как тело прочитано, `abort()` ничего не делает.
+
+Сигнал, отменённый **до** вызова, отклонит `fetch` сразу — запрос даже не уйдёт.
+
+<Callout type="warning">
+  Текст `error.message` у `AbortError` в разных браузерах и в Node.js разный. Проверяйте `error.name`,
+  а не сообщение.
+</Callout>
+
+### Отличаем отмену от настоящей ошибки
+
+Отмена — это не сбой. Пользователю не нужно видеть «Ошибка загрузки», если он сам нажал «Отмена»
+или ушёл со страницы:
+
+```js
+async function loadReport(signal) {
+  try {
+    const response = await fetch('/api/report', { signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return null; // отменили сами — молча выходим
+    }
+    showError('Не удалось загрузить отчёт'); // настоящая ошибка
+    throw error;
+  }
+}
+```
+
+Если вы передаёте в `abort()` свою причину (строку или ошибку), `error.name` уже не будет `'AbortError'`.
+Надёжнее проверять сам сигнал:
+
+```js
+catch (error) {
+  if (signal.aborted) return null; // отменили — неважно, с какой причиной
+  showError('Не удалось загрузить отчёт');
+}
+```
+
+## 4. Таймаут: AbortSignal.timeout
+
+У `fetch` нет опции `timeout`. Раньше таймаут делали вручную:
+
+```js
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), 5000);
+
+try {
+  await fetch('/api/data', { signal: controller.signal });
+} finally {
+  clearTimeout(timer); // не забыть убрать таймер
+}
+```
+
+Сейчас есть готовый статический метод — он сам создаёт сигнал, который отменится через `ms` миллисекунд:
+
+```js
+try {
+  const response = await fetch('/api/data', { signal: AbortSignal.timeout(5000) });
+  const data = await response.json();
+} catch (error) {
+  if (error.name === 'TimeoutError') {
+    console.log('Сервер не ответил за 5 секунд');
+  } else {
+    throw error;
+  }
+}
+```
+
+| | `setTimeout` + `abort()` | `AbortSignal.timeout(ms)` |
+|---|---|---|
+| Кода | контроллер, таймер, `clearTimeout` | одна строка |
+| Имя ошибки | `'AbortError'` | `'TimeoutError'` — легко отличить от ручной отмены |
+| Можно отменить раньше вручную | да, тем же контроллером | нет, нужен `AbortSignal.any` |
+
+Ещё один статический метод — `AbortSignal.abort(reason?)`: возвращает **уже отменённый** сигнал. Удобно в тестах.
+
+## 5. AbortSignal.any: несколько причин отмены
+
+Часто нужно и то, и другое: пользователь может нажать «Отмена», **и** есть таймаут.
+`AbortSignal.any([...])` создаёт сигнал, который отменится, как только отменится **любой** из переданных:
+
+```js
+const controller = new AbortController();
+cancelButton.addEventListener('click', () => controller.abort());
+
+const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]);
+
+try {
+  const response = await fetch('/api/export', { signal });
+  // ...
+} catch (error) {
+  if (error.name === 'TimeoutError') showError('Сервер не отвечает');
+  else if (error.name === 'AbortError') showInfo('Экспорт отменён');
+  else throw error;
+}
+```
+
+Причина у общего сигнала — та же, что у сработавшего: `signal.reason` будет `TimeoutError` или `AbortError`.
+
+<Callout type="tip">
+  `AbortSignal.any` и `AbortSignal.timeout` — относительно новые методы. Они есть во всех современных браузерах
+  и в Node.js 20+, но если нужно поддерживать старые браузеры, проверьте `caniuse` или используйте ручной вариант
+  с `setTimeout`.
+</Callout>
+
+## 6. Снятие обработчиков через signal
+
+`addEventListener` тоже принимает `signal`. После `abort()` **все** обработчики, добавленные с этим сигналом,
+снимаются разом — не нужно хранить ссылки на функции для `removeEventListener`
+(подробнее — в уроке [Обработчики событий](/learn/js/event-listeners)):
+
+```js
+const controller = new AbortController();
+const { signal } = controller;
+
+window.addEventListener('resize', onResize, { signal });
+window.addEventListener('scroll', onScroll, { signal });
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeModal();
+}, { signal });
+
+// закрыли модалку — снимаем всё одной строкой
+function closeModal() {
+  controller.abort();
+}
+```
+
+Особенно удобно со стрелочными функциями: их нельзя снять через `removeEventListener`, потому что ссылки на них нет,
+а через `signal` — можно. Если сигнал уже отменён, `addEventListener` обработчик просто не добавит.
+
+## 7. Свои отменяемые функции
+
+`AbortSignal` — не только для `fetch`. Любая ваша асинхронная функция может принять `{ signal }`
+и уважать отмену. Договорённость такая: при отмене функция **отклоняет промис с `signal.reason`**.
+
+### Отменяемая пауза
+
+```js
+function sleep(ms, { signal } = {}) {
+  return new Promise((resolve, reject) => {
+    // 1. уже отменили — сразу выходим
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+
+    // 2. при отмене — чистим таймер и отклоняем промис
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort); // не копим обработчики
+      resolve();
+    }, ms);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 100);
+
+await sleep(5000, { signal: controller.signal }); // отклонится через 100 мс с AbortError
+```
+
+### Проверка между шагами
+
+В долгих циклах и многошаговых операциях вызывайте `signal.throwIfAborted()` между шагами:
+
+```js
+async function importRows(rows, { signal } = {}) {
+  for (const row of rows) {
+    signal?.throwIfAborted(); // отменили — дальше не идём
+    await saveRow(row, { signal }); // и передаём сигнал глубже
+  }
+}
+```
+
+Два правила: **проверяйте** сигнал между шагами и **передавайте** его во все вложенные вызовы.
+Без этого отмена останется только на верхнем уровне, а работа внутри продолжится.
+
+## 8. Поиск по мере ввода
+
+Вернёмся к гонке из первого раздела. Решение — перед новым запросом отменять предыдущий:
+
+```js
+let controller = null;
+
+input.addEventListener('input', async () => {
+  controller?.abort(); // старый запрос больше не нужен
+  controller = new AbortController(); // новый контроллер на новый запрос
+
+  try {
+    const query = encodeURIComponent(input.value);
+    const response = await fetch(`/api/search?q=${query}`, { signal: controller.signal });
+    renderResults(await response.json());
+  } catch (error) {
+    if (error.name === 'AbortError') return; // отменили сами — это нормально
+    showError('Поиск не удался');
+  }
+});
+```
+
+Теперь отрисуется только ответ на последний запрос: все предыдущие отклоняются с `AbortError` и молча выходят.
+Хранить `controller` во внешней переменной позволяет [замыкание](/learn/js/closures).
+
+<Callout type="tip">
+  Отмену удобно сочетать с debounce: debounce уменьшает число запросов, а `abort` гарантирует,
+  что из оставшихся победит последний.
+</Callout>
+
+## 9. Отмена при размонтировании компонента
+
+Во фреймворках запрос нужно отменять, когда компонент исчезает. В React — функция очистки в `useEffect`
+(про состояние — в уроке [useState](/learn/react/use-state)):
+
+```jsx
+useEffect(() => {
+  const controller = new AbortController();
+
+  fetch(`/api/users/${userId}`, { signal: controller.signal })
+    .then((response) => response.json())
+    .then(setUser)
+    .catch((error) => {
+      if (error.name !== 'AbortError') setError(error);
+    });
+
+  return () => controller.abort(); // размонтирование или смена userId
+}, [userId]);
+```
+
+Очистка срабатывает не только при размонтировании, но и перед каждым перезапуском эффекта — например, при смене
+`userId`. Так что гонку «старый пользователь перезаписал нового» это тоже решает.
+
+Во Vue — `onUnmounted` (про реактивность — в уроке [Реактивность во Vue](/learn/vue/reactivity)):
+
+```js
+const controller = new AbortController();
+
+onMounted(async () => {
+  try {
+    const response = await fetch('/api/stats', { signal: controller.signal });
+    stats.value = await response.json();
+  } catch (error) {
+    if (error.name !== 'AbortError') console.error(error);
+  }
+});
+
+onUnmounted(() => controller.abort());
+```
+
+## 10. Чего отмена не делает
+
+`abort()` останавливает **ожидание на клиенте**, а не работу на сервере:
+
+- если `POST /api/orders` уже дошёл до сервера, заказ может быть создан — даже если вы отменили запрос;
+- сервер узнает об отмене (обрыв соединения) только если сам за этим следит;
+- после того как ответ получен и прочитан, `abort()` ничего не меняет — отката не будет.
+
+Отмена — это «мне больше не нужен результат», а не «отмени действие». Для отмены действия на сервере нужен
+отдельный запрос (`DELETE /api/orders/42`) или операция, которую можно безопасно повторить.
+
+<Callout type="danger">
+  Не используйте отмену `fetch` как способ «отменить оплату» или «откатить сохранение».
+  Если запрос с изменением данных отменили, состояние на сервере неизвестно — перезапросите его.
+</Callout>
+
+## Как не надо
+
+### Переиспользовать отменённый контроллер
+
+```js
+// ✗ контроллер один на все запросы
+const controller = new AbortController();
+
+function search(query) {
+  controller.abort();
+  return fetch(`/api/search?q=${query}`, { signal: controller.signal }); // сразу AbortError
+}
+
+// ✓ новый контроллер на каждый запрос
+let controller = null;
+
+function search(query) {
+  controller?.abort();
+  controller = new AbortController();
+  return fetch(`/api/search?q=${query}`, { signal: controller.signal });
+}
+```
+
+### Показывать ошибку при намеренной отмене
+
+```js
+// ✗ пользователь нажал «Отмена» — и видит «Что-то пошло не так»
+catch (error) {
+  showError('Что-то пошло не так');
+}
+
+// ✓ отмену обрабатываем отдельно
+catch (error) {
+  if (error.name === 'AbortError') return;
+  showError('Что-то пошло не так');
+}
+```
+
+### Забывать отменять при уходе со страницы
+
+```jsx
+// ✗ ответ придёт после размонтирования и обновит состояние исчезнувшего компонента
+useEffect(() => {
+  fetch(url).then((response) => response.json()).then(setData);
+}, [url]);
+
+// ✓ очистка отменяет запрос (полный пример — в разделе 9)
+useEffect(() => {
+  const controller = new AbortController();
+  fetch(url, { signal: controller.signal }) /* ... */;
+  return () => controller.abort();
+}, [url]);
+```
+
+### Создать контроллер, но не передать сигнал
+
+```js
+// ✗ abort() ни на что не влияет — fetch о сигнале не знает
+const controller = new AbortController();
+fetch('/api/data');
+controller.abort();
+
+// ✓
+fetch('/api/data', { signal: controller.signal });
+```
+
+### Ждать отката после завершённого запроса
+
+```js
+// ✗ заказ уже создан, abort ничего не откатит
+const response = await fetch('/api/orders', { method: 'POST', body, signal: controller.signal });
+await response.json();
+controller.abort(); // бесполезно
+
+// ✓ отменить действие — отдельный запрос
+await fetch(`/api/orders/${order.id}`, { method: 'DELETE' });
+```
+
+### Игнорировать сигнал в своих долгих операциях
+
+```js
+// ✗ принимает signal, но не проверяет — цикл доработает до конца
+async function processAll(items, { signal }) {
+  for (const item of items) {
+    await process(item);
+  }
+}
+
+// ✓ проверка между шагами и передача сигнала дальше
+async function processAll(items, { signal }) {
+  for (const item of items) {
+    signal.throwIfAborted();
+    await process(item, { signal });
+  }
+}
+```
+
+## Шпаргалка
+
+| Задача | Код |
+|---|---|
+| Создать контроллер | `const controller = new AbortController()` |
+| Отменить | `controller.abort()` или `controller.abort(reason)` |
+| Передать в fetch | `fetch(url, { signal: controller.signal })` |
+| Проверить отмену | `signal.aborted`, причина — `signal.reason` |
+| Бросить, если отменено | `signal.throwIfAborted()` |
+| Узнать о моменте отмены | `signal.addEventListener('abort', fn, { once: true })` |
+| Таймаут | `AbortSignal.timeout(5000)` → ошибка `'TimeoutError'` |
+| Любой из сигналов | `AbortSignal.any([a, b])` |
+| Уже отменённый сигнал | `AbortSignal.abort()` |
+| Снять много обработчиков | `addEventListener(type, fn, { signal })` + `abort()` |
+| Отличить отмену от ошибки | `error.name === 'AbortError'` или `signal.aborted` |
+
+Главное:
+
+- промис нельзя отменить — но можно отменить **операцию**, если она принимает `signal`;
+- контроллер одноразовый: новая операция — новый контроллер;
+- отмена — не ошибка для пользователя, обрабатывайте её отдельно;
+- `abort()` не откатывает то, что уже сделал сервер.
+
+## Проверь себя
+
+<Quiz client:visible id="js/abort-controller/fetch-error-name" options={["'Error'", "'AbortError'", "'TimeoutError'", "'TypeError'"]} answer={1}>
+  Что выведет код?
+
+  ```js
+  const controller = new AbortController();
+  const promise = fetch('/api/slow', { signal: controller.signal });
+  controller.abort();
+
+  promise.catch((error) => console.log(error.name));
+  ```
+
+  <Fragment slot="explanation">
+    `abort()` без аргумента отклоняет `fetch` объектом `DOMException` с именем `'AbortError'`.
+    `'TimeoutError'` бывает у сигнала из `AbortSignal.timeout`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/abort-controller/custom-reason"
+  options={["'AbortError'", 'undefined', "'Отмена'", "'Error'"]}
+  answer={1}
+>
+  Что выведет код?
+
+  ```js
+  const controller = new AbortController();
+  const promise = fetch('/api/slow', { signal: controller.signal });
+  controller.abort('Отмена');
+
+  promise.catch((error) => console.log(error.name));
+  ```
+
+  <Fragment slot="explanation">
+    С причиной `fetch` отклоняется **ровно ею** — строкой `'Отмена'`. У строки нет свойства `name`, поэтому
+    `undefined`. Если вы передаёте свою причину, проверяйте `signal.aborted`, а не `error.name`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/abort-controller/abort-twice"
+  options={["'abort!' дважды, reason — 'вторая'", "'abort!' один раз, reason — 'первая'", "'abort!' один раз, reason — 'вторая'", 'Ошибка при втором abort']}
+  answer={1}
+>
+  Что произойдёт?
+
+  ```js
+  const controller = new AbortController();
+  controller.signal.addEventListener('abort', () => console.log('abort!'));
+
+  controller.abort('первая');
+  controller.abort('вторая');
+  console.log(controller.signal.reason);
+  ```
+
+  <Fragment slot="explanation">
+    Отмена одноразовая: повторный `abort()` молча игнорируется. Событие срабатывает один раз,
+    а причина остаётся первой.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/abort-controller/sync-event"
+  options={["'B', 'A', 'C'", "'B', 'C', 'A'", "'A', 'B', 'C'", "'B', 'C'"]}
+  answer={0}
+>
+  В каком порядке будут выводы?
+
+  ```js
+  const controller = new AbortController();
+  controller.signal.addEventListener('abort', () => console.log('A'));
+
+  console.log('B');
+  controller.abort();
+  console.log('C');
+  ```
+
+  <Fragment slot="explanation">
+    Событие `'abort'` срабатывает синхронно, прямо внутри вызова `abort()`. Поэтому `'A'` выводится между `'B'` и `'C'`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/abort-controller/reuse"
+  options={['Оба запроса выполнятся', 'Первый отменится, второй выполнится', 'Второй fetch сразу отклонится с AbortError', 'Второй fetch зависнет']}
+  answer={2}
+>
+  Что будет со вторым запросом?
+
+  ```js
+  const controller = new AbortController();
+
+  fetch('/api/a', { signal: controller.signal }).catch(() => {});
+  controller.abort();
+
+  fetch('/api/b', { signal: controller.signal });
+  ```
+
+  <Fragment slot="explanation">
+    Сигнал остаётся отменённым навсегда. `fetch` с уже отменённым сигналом отклоняется сразу,
+    запрос даже не отправляется. Для каждого запроса нужен новый контроллер.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/abort-controller/timeout"
+  options={["'AbortError'", "'TimeoutError'", "'Error'", 'Запрос просто выполнится дольше']}
+  answer={1}
+>
+  Сервер отвечает 3 секунды. Какое `error.name` попадёт в `catch`?
+
+  ```js
+  try {
+    await fetch('/api/slow', { signal: AbortSignal.timeout(1000) });
+  } catch (error) {
+    console.log(error.name);
+  }
+  ```
+
+  <Fragment slot="explanation">
+    Сигнал из `AbortSignal.timeout` отменяется с причиной `DOMException` с именем `'TimeoutError'`.
+    Так таймаут легко отличить от ручной отмены (`'AbortError'`).
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/abort-controller/listeners"
+  options={['0', '1', '2', '4']}
+  answer={2}
+>
+  Что выведет код?
+
+  ```js
+  const target = new EventTarget();
+  const controller = new AbortController();
+  let count = 0;
+
+  target.addEventListener('ping', () => count++, { signal: controller.signal });
+  target.addEventListener('pong', () => count++, { signal: controller.signal });
+
+  target.dispatchEvent(new Event('ping'));
+  target.dispatchEvent(new Event('pong'));
+  controller.abort();
+  target.dispatchEvent(new Event('ping'));
+  target.dispatchEvent(new Event('pong'));
+
+  console.log(count);
+  ```
+
+  <Fragment slot="explanation">
+    До `abort()` оба обработчика сработали — `count` стал `2`. Один `abort()` снял оба обработчика,
+    поэтому следующие события уже ничего не увеличивают.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/abort-controller/server-side"
+  options={['Заказ точно не создан', 'Заказ мог быть создан на сервере', 'Браузер отправит DELETE автоматически', 'Сервер получит событие abort и откатит заказ']}
+  answer={1}
+>
+  Запрос на создание заказа отменили через 2 секунды после отправки. Что известно о заказе?
+
+  ```js
+  const controller = new AbortController();
+  fetch('/api/orders', { method: 'POST', body, signal: controller.signal });
+  setTimeout(() => controller.abort(), 2000);
+  ```
+
+  <Fragment slot="explanation">
+    `abort()` прекращает ожидание ответа на клиенте. Если запрос уже дошёл до сервера, тот мог успеть создать заказ.
+    Отмена не откатывает действия на сервере — состояние нужно перепроверить.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Кнопка «Отмена»" level="easy">
+  На странице есть кнопки «Загрузить» и «Отмена» и блок для вывода. По «Загрузить» начинается запрос к `/api/report`,
+  в блоке — «Загрузка…». По «Отмена» запрос прерывается, и в блоке появляется «Загрузка отменена».
+  При настоящей ошибке — «Ошибка загрузки», при успехе — `Готово: <title из ответа>`.
+
+  ```js
+  const loadButton = document.querySelector('#load');
+  const cancelButton = document.querySelector('#cancel');
+  const output = document.querySelector('#output');
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    let controller = null;
+
+    loadButton.addEventListener('click', async () => {
+      controller = new AbortController();
+      output.textContent = 'Загрузка…';
+
+      try {
+        const response = await fetch('/api/report', { signal: controller.signal });
+        const data = await response.json();
+        output.textContent = `Готово: ${data.title}`;
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          output.textContent = 'Загрузка отменена';
+        } else {
+          output.textContent = 'Ошибка загрузки';
+        }
+      }
+    });
+
+    cancelButton.addEventListener('click', () => {
+      controller?.abort();
+    });
+    ```
+
+    Контроллер создаётся заново на каждый клик «Загрузить»: старый после отмены уже не годится.
+    `?.` защищает от клика «Отмена» до первой загрузки.
+  </Fragment>
+</Task>
+
+<Task title="Запрос с таймаутом" level="easy">
+  Напишите `fetchWithTimeout(url, ms)`: возвращает разобранный JSON, а если сервер не ответил за `ms` миллисекунд,
+  бросает `Error` с сообщением `Сервер не ответил за <ms> мс`. Остальные ошибки пробрасываются как есть.
+
+  ```js
+  await fetchWithTimeout('/api/fast', 1000); // { ... }
+  await fetchWithTimeout('/api/slow', 50); // Error: 'Сервер не ответил за 50 мс'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    async function fetchWithTimeout(url, ms) {
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(ms) });
+        return await response.json();
+      } catch (error) {
+        if (error.name === 'TimeoutError') {
+          throw new Error(`Сервер не ответил за ${ms} мс`);
+        }
+        throw error;
+      }
+    }
+    ```
+
+    `return await` нужен, чтобы ошибка чтения тела (таймаут мог сработать и во время `json()`) тоже попала в `catch`.
+    По имени `'TimeoutError'` таймаут отличается от остальных ошибок.
+  </Fragment>
+</Task>
+
+<Task title="Отменяемая пауза" level="medium">
+  Напишите `sleep(ms, { signal })`: промис выполняется через `ms` миллисекунд. Если сигнал отменили раньше —
+  промис сразу отклоняется с `signal.reason`, а таймер очищается. Если сигнал уже отменён — отклоняется сразу.
+  Сигнал необязателен.
+
+  ```js
+  await sleep(100); // ждёт 100 мс
+
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 50);
+  await sleep(5000, { signal: controller.signal }); // через 50 мс — AbortError
+
+  await sleep(5000, { signal: AbortSignal.timeout(20) }); // через 20 мс — TimeoutError
+  ```
+
+  <Fragment slot="hint">
+    Внутри `new Promise` проверьте `signal?.aborted`, затем подпишитесь на `'abort'` с `{ once: true }`.
+    Не забудьте снять обработчик, когда таймер сработал сам.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function sleep(ms, { signal } = {}) {
+      return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(signal.reason);
+          return;
+        }
+
+        const onAbort = () => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        };
+
+        const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }, ms);
+
+        signal?.addEventListener('abort', onAbort, { once: true });
+      });
+    }
+    ```
+
+    Отклонение с `signal.reason` — общепринятая договорённость: так ведёт себя `fetch`, и вызывающий код
+    одинаково обрабатывает `AbortError` и `TimeoutError` от любых функций. `removeEventListener` после таймера
+    не даёт обработчикам копиться на долгоживущем сигнале.
+  </Fragment>
+</Task>
+
+<Task title="Поиск без гонок" level="medium">
+  Напишите `createSearch(onResults)`, возвращающую функцию `search(query)`. Каждый вызов делает запрос
+  `/api/search?q=<query>` и передаёт JSON в `onResults`. Если `search` вызвали снова до ответа,
+  предыдущий запрос должен отмениться, а `onResults` — вызваться только с результатами последнего запроса.
+  Отмена не должна выводить ошибку.
+
+  ```js
+  const search = createSearch((results) => render(results));
+
+  search('а'); // медленный ответ
+  search('ал'); // быстрый ответ
+  // render вызовется один раз — с результатами для «ал»
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function createSearch(onResults) {
+      let controller = null;
+
+      return async function search(query) {
+        controller?.abort();
+        controller = new AbortController();
+
+        try {
+          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+            signal: controller.signal,
+          });
+          onResults(await response.json());
+        } catch (error) {
+          if (error.name === 'AbortError') return;
+          console.error('Поиск не удался:', error);
+        }
+      };
+    }
+    ```
+
+    Контроллер текущего запроса хранится в замыкании. Новый вызов отменяет старый запрос, и тот отклоняется
+    с `AbortError` — даже если ответ уже пришёл, но тело ещё не прочитано.
+  </Fragment>
+</Task>
+
+<Task title="Обёртка: отмена пользователем + таймаут" level="hard">
+  Напишите `request(url, { signal, timeout = 5000 })`:
+
+  - запрос отменяется, если отменили внешний `signal` (он необязателен) **или** истёк `timeout`;
+  - при статусе не из 200–299 бросает `Error('HTTP <status>')`;
+  - при таймауте бросает `Error` с сообщением `Таймаут <timeout> мс: <url>` и исходной ошибкой в `cause`;
+  - при отмене пользователем пробрасывает исходную `AbortError`, чтобы вызывающий код мог её распознать.
+
+  ```js
+  const controller = new AbortController();
+  cancelButton.onclick = () => controller.abort();
+
+  try {
+    const data = await request('/api/export', { signal: controller.signal, timeout: 10_000 });
+  } catch (error) {
+    if (error.name === 'AbortError') return; // пользователь отменил
+    showError(error.message); // таймаут или HTTP-ошибка
+  }
+  ```
+
+  <Fragment slot="hint">
+    `AbortSignal.any([signal, AbortSignal.timeout(timeout)])` — но `signal` может быть `undefined`,
+    а `any` ждёт массив сигналов.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    async function request(url, { signal, timeout = 5000 } = {}) {
+      const timeoutSignal = AbortSignal.timeout(timeout);
+      const signals = signal ? [signal, timeoutSignal] : [timeoutSignal];
+
+      try {
+        const response = await fetch(url, { signal: AbortSignal.any(signals) });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        if (error.name === 'TimeoutError') {
+          throw new Error(`Таймаут ${timeout} мс: ${url}`, { cause: error });
+        }
+        throw error;
+      }
+    }
+    ```
+
+    Общий сигнал отменяется с причиной того сигнала, который сработал первым, поэтому по `error.name`
+    видно, кто отменил: `'TimeoutError'` — таймаут, `'AbortError'` — пользователь.
+    `cause` сохраняет исходную ошибку для [отладки](/learn/frontend/debugging).
+  </Fragment>
+</Task>

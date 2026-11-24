@@ -1,0 +1,1124 @@
+---
+title: Свой стейт-менеджер на JavaScript
+description: Что такое состояние, когда нужен стор и когда нет; пишем свой стор шаг за шагом — подписки, иммутабельность, селекторы, reducer, middleware, persist, Proxy — и подключаем к UI
+section: architecture
+order: 1
+level: middle
+tags: [state, store, observer, redux, zustand, pinia, immutability, architecture]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Стейт-менеджер** (store, хранилище) — объект, который держит данные приложения в одном месте, даёт их прочитать,
+изменить и **сообщает всем заинтересованным, что данные изменились**. Redux, Zustand, Pinia, MobX — это всё вариации
+одной идеи, и ядро любой из них помещается в 15 строк. В уроке мы напишем свой стор с нуля, по шагу добавляя
+возможности настоящих библиотек, и разберём, где он нужен, а где только мешает.
+
+## 1. Что такое состояние
+
+**Состояние** — данные, которые меняются во время работы приложения и от которых зависит то, что видит пользователь:
+открыт ли попап, что введено в поле, кто залогинен, что лежит в корзине.
+
+| Вид | Где живёт | Примеры |
+|---|---|---|
+| Локальное | внутри одного компонента | значение инпута, открыт ли дропдаун, наведена ли мышь |
+| Общее (shared) | у нескольких компонентов сразу | корзина (иконка в шапке + страница корзины), текущий пользователь, тема |
+| Серверное | на сервере, у клиента — кэш | список товаров, профиль; для него есть отдельные инструменты (TanStack Query и аналоги) |
+| В URL | в адресной строке | номер страницы, фильтры, открытая вкладка |
+
+Стор решает задачу **общего** состояния. Локальное состояние лучше держать рядом с компонентом —
+например, в `useState` ([урок](/learn/react/use-state)) или `ref` во Vue.
+
+### Когда стор нужен
+
+- **Prop drilling**: данные передаются через 3–4 уровня компонентов, которым они самим не нужны — только чтобы
+  дотащить их до глубокого потомка.
+- **Много читателей**: одни и те же данные показывают далёкие друг от друга компоненты (шапка, сайдбар, страница).
+- **Много писателей**: данные меняют из разных мест, и нужно одно понятное место с правилами изменения.
+- **Данные переживают компонент**: пользователь ушёл со страницы и вернулся — состояние должно сохраниться.
+
+### Когда стор не нужен
+
+- Состояние нужно одному компоненту или паре «родитель — ребёнок».
+- Это поле формы до отправки: каждое нажатие клавиши в глобальном сторе — лишние уведомления всем подписчикам.
+- Это данные с сервера: их кэширование, повторные запросы и инвалидация — отдельная задача, стор для неё неудобен.
+
+<Callout type="tip">
+  Правило: начинайте с локального состояния и **поднимайте** его выше, только когда оно понадобилось кому-то ещё.
+  Стор — последняя ступень, а не первая.
+</Callout>
+
+## 2. Ядро: getState, setState, subscribe
+
+Стор построен на паттерне **«Наблюдатель»** (observer): есть источник данных и список подписчиков-функций.
+Когда данные меняются, стор вызывает каждого подписчика. Подписчики хранятся в [замыкании](/learn/js/closures) —
+снаружи до них не добраться.
+
+```js
+function createStore(initialState) {
+  let state = initialState; // приватное состояние
+  const listeners = new Set(); // подписчики
+
+  function getState() {
+    return state;
+  }
+
+  function setState(nextState) {
+    state = nextState;
+    listeners.forEach((listener) => listener(state)); // уведомляем всех
+  }
+
+  function subscribe(listener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener); // функция отписки
+  }
+
+  return { getState, setState, subscribe };
+}
+```
+
+```js
+const store = createStore({ count: 0 });
+
+const unsubscribe = store.subscribe((state) => {
+  console.log('count:', state.count);
+});
+
+store.setState({ count: 1 }); // 'count: 1'
+store.setState({ count: 2 }); // 'count: 2'
+
+unsubscribe();
+store.setState({ count: 3 }); // ничего — подписчика больше нет
+store.getState(); // { count: 3 }
+```
+
+Почему `subscribe` **возвращает** функцию отписки, а не требует отдельного `unsubscribe(listener)`: вызывающему не
+нужно хранить ссылку на свой колбэк, а отписка не перепутает чужую функцию. Так устроены Redux, Zustand
+и функция очистки в React-хуке `useEffect`.
+
+<Callout type="info">
+  `Set` вместо массива — чтобы одна и та же функция не подписалась дважды, а удаление было за O(1).
+  Колбэки — обычные [функции обратного вызова](/learn/js/callbacks).
+</Callout>
+
+## 3. Иммутабельные обновления
+
+Как подписчику понять, что изменилось? Самый дешёвый способ — **сравнить ссылки**: если объект новый, данные
+изменились; если ссылка та же — нет. Это работает, только если состояние никогда не мутируют, а при каждом
+изменении создают **новый объект** ([сравнение по ссылке](/learn/js/types-comparison)).
+
+Улучшим `setState`: пусть он принимает функцию-апдейтер и пропускает «пустые» обновления.
+
+```js
+function createStore(initialState) {
+  let state = initialState;
+  const listeners = new Set();
+
+  function getState() {
+    return state;
+  }
+
+  function setState(update) {
+    // Апдейтер получает актуальное состояние и возвращает новое
+    const nextState = typeof update === 'function' ? update(state) : update;
+
+    if (Object.is(nextState, state)) return; // та же ссылка — уведомлять не о чем
+
+    const prevState = state;
+    state = nextState;
+    listeners.forEach((listener) => listener(state, prevState));
+  }
+
+  function subscribe(listener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }
+
+  return { getState, setState, subscribe };
+}
+```
+
+Теперь разница между мутацией и новым объектом видна сразу:
+
+```js
+const store = createStore({ count: 0 });
+let calls = 0;
+store.subscribe(() => calls++);
+
+// ✗ мутация: объект тот же, ссылка не изменилась
+const state = store.getState();
+state.count++;
+store.setState(state);
+console.log(calls, store.getState().count); // 0 1 — данные поменялись, а подписчики не узнали
+
+// ✓ новый объект через spread
+store.setState((s) => ({ ...s, count: s.count + 1 }));
+console.log(calls, store.getState().count); // 1 2
+```
+
+Вложенные данные копируются **по всему пути** до изменённого места ([spread](/learn/js/spread)):
+
+```js
+// Переименовать пользователя и добавить задачу, не трогая остальное
+store.setState((s) => ({
+  ...s,
+  user: { ...s.user, name: 'Иван' }, // новый user
+  todos: [...s.todos, { id: 3, text: 'Новая', done: false }], // новый массив
+}));
+```
+
+| Операция | Мутирует ✗ | Возвращает новое ✓ |
+|---|---|---|
+| Добавить в массив | `push`, `unshift` | `[...arr, x]` |
+| Удалить | `splice` | `arr.filter(…)` |
+| Изменить элемент | `arr[i].done = true` | `arr.map((t) => (t.id === id ? { ...t, done: true } : t))` |
+| Сортировать | `sort`, `reverse` | `[...arr].sort(…)` или `arr.toSorted(…)` |
+| Поле объекта | `obj.name = 'x'` | `{ ...obj, name: 'x' }` |
+
+### Зачем апдейтер-функция
+
+Апдейтер получает **актуальное** состояние. Если несколько обновлений идут подряд от одного снимка, они
+перезапишут друг друга:
+
+```js
+// ✗ оба вызова строят новое состояние из одного и того же старого снимка
+const s0 = store.getState(); // { count: 0 }
+store.setState({ ...s0, count: s0.count + 1 });
+store.setState({ ...s0, count: s0.count + 1 });
+store.getState().count; // 1
+
+// ✓ каждый апдейтер получает результат предыдущего
+store.setState((s) => ({ ...s, count: s.count + 1 }));
+store.setState((s) => ({ ...s, count: s.count + 1 }));
+store.getState().count; // 2 (если начинали с 0)
+```
+
+<Callout type="info">
+  Мы заменяем состояние целиком. Zustand в `set` делает **поверхностное слияние**: `set({ count: 1 })` сохранит
+  остальные поля верхнего уровня. Вложенные объекты всё равно копируются вручную.
+</Callout>
+
+## 4. Селекторы: подписка на кусок состояния
+
+Сейчас каждый подписчик вызывается на **любое** изменение. Шапке с именем пользователя незачем перерисовываться,
+когда меняется тема. **Селектор** — функция, которая достаёт из состояния нужный кусок. Подписчик вызывается,
+только если этот кусок изменился:
+
+```js
+function subscribeSelector(store, selector, listener) {
+  let selected = selector(store.getState());
+
+  return store.subscribe((state) => {
+    const nextSelected = selector(state);
+    if (Object.is(nextSelected, selected)) return; // наш кусок не изменился
+
+    const prevSelected = selected;
+    selected = nextSelected;
+    listener(nextSelected, prevSelected);
+  });
+}
+```
+
+```js
+const store = createStore({ user: { name: 'Аня' }, theme: 'light' });
+
+subscribeSelector(
+  store,
+  (s) => s.user.name,
+  (name, prev) => console.log(`${prev} → ${name}`),
+);
+
+store.setState((s) => ({ ...s, theme: 'dark' })); // ничего — имя не изменилось
+store.setState((s) => ({ ...s, user: { ...s.user, name: 'Иван' } })); // 'Аня → Иван'
+```
+
+Это и есть причина держать состояние иммутабельным: при мутации `s.user` остался бы тем же объектом, и сравнение
+по ссылке ничего бы не заметило.
+
+<Callout type="warning">
+  Селектор не должен создавать новый объект при каждом вызове: `(s) => ({ theme: s.theme })` возвращает
+  новую ссылку всегда, и подписчик сработает на каждое изменение стора. Возвращайте примитив или существующий
+  кусок состояния, а если нужен объект — сравнивайте поверхностно (`shallow` в Zustand, `shallowEqual` в задаче ниже).
+</Callout>
+
+## 5. Actions и reducer: мини-Redux
+
+`setState` можно вызвать откуда угодно с любым содержимым. Когда приложение растёт, становится непонятно, кто и
+почему поменял данные. Redux предлагает другой контракт:
+
+- **action** — объект-описание события: `{ type: 'todos/added', text: 'Хлеб' }`;
+- **reducer** — чистая функция `(state, action) => newState`, единственное место, где описаны правила изменения;
+- **dispatch(action)** — единственный способ что-то изменить.
+
+```js
+function todosReducer(state, action) {
+  switch (action.type) {
+    case 'todos/added':
+      return { ...state, todos: [...state.todos, { id: action.id, text: action.text, done: false }] };
+    case 'todos/toggled':
+      return {
+        ...state,
+        todos: state.todos.map((t) => (t.id === action.id ? { ...t, done: !t.done } : t)),
+      };
+    case 'todos/removed':
+      return { ...state, todos: state.todos.filter((t) => t.id !== action.id) };
+    default:
+      return state; // неизвестный action — то же состояние, подписчики не дёргаются
+  }
+}
+
+function createReduxStore(reducer, initialState) {
+  const store = createStore(initialState);
+
+  function dispatch(action) {
+    store.setState((state) => reducer(state, action));
+    return action;
+  }
+
+  return { getState: store.getState, subscribe: store.subscribe, dispatch };
+}
+```
+
+```js
+const store = createReduxStore(todosReducer, { todos: [] });
+
+store.dispatch({ type: 'todos/added', id: 1, text: 'Купить хлеб' });
+store.dispatch({ type: 'todos/added', id: 2, text: 'Выучить reduce' });
+store.dispatch({ type: 'todos/toggled', id: 1 });
+store.dispatch({ type: 'todos/removed', id: 2 });
+
+store.getState().todos; // [{ id: 1, text: 'Купить хлеб', done: true }]
+```
+
+Название «reducer» — от [`Array.prototype.reduce`](/learn/js/reduce): состояние — это свёртка всех actions,
+`actions.reduce(reducer, initialState)`. Чтобы не опечататься в `type`, actions создают функциями —
+**action creators**: `const todoAdded = (id, text) => ({ type: 'todos/added', id, text })`.
+
+| | Прямой `setState` | `dispatch` + reducer |
+|---|---|---|
+| Кода | минимум | больше: типы actions, switch, creators |
+| Где логика изменений | размазана по компонентам | в одном месте, в reducer |
+| Тестирование | через стор | reducer — чистая функция: вход → выход |
+| Отладка | «кто-то поменял» | лог actions, time-travel в DevTools |
+| Middleware | неудобно перехватывать | каждое изменение проходит через `dispatch` |
+| Подходит | небольшим и средним приложениям | большим командам и сложной логике |
+
+## 6. Производное состояние: вычисляй, а не храни
+
+Сумма корзины, количество выполненных задач, отфильтрованный список — это **производные** данные. Их не кладут
+в стор, а вычисляют из него селекторами:
+
+```js
+// ✗ total хранится отдельно и рассинхронизируется при первом же забытом обновлении
+const bad = createStore({ items: [{ id: 1, price: 100, qty: 2 }], total: 200 });
+bad.setState((s) => ({ ...s, items: [...s.items, { id: 2, price: 50, qty: 1 }] }));
+bad.getState().total; // 200 — а должно быть 250
+
+// ✓ total вычисляется из items
+const selectTotal = (state) => state.items.reduce((sum, item) => sum + item.price * item.qty, 0);
+const selectCount = (state) => state.items.reduce((sum, item) => sum + item.qty, 0);
+
+const store = createStore({ items: [{ id: 1, price: 100, qty: 2 }, { id: 2, price: 50, qty: 1 }] });
+selectTotal(store.getState()); // 250
+selectCount(store.getState()); // 3
+```
+
+Если вычисление дорогое, его **мемоизируют**: запоминают последний аргумент и результат. Благодаря иммутабельности
+«аргумент не изменился» проверяется одним сравнением ссылок:
+
+```js
+function memoizeOne(fn) {
+  let lastArg;
+  let lastResult;
+  let hasResult = false;
+
+  return (arg) => {
+    if (hasResult && Object.is(arg, lastArg)) return lastResult; // тот же вход — старый результат
+    lastArg = arg;
+    lastResult = fn(arg);
+    hasResult = true;
+    return lastResult;
+  };
+}
+
+const selectDone = memoizeOne((todos) => todos.filter((t) => t.done));
+selectDone(todos) === selectDone(todos); // true — filter выполнился один раз
+```
+
+Мемоизация решает и проблему из предыдущего раздела: `filter` возвращает новый массив, а мемоизированный селектор —
+одну и ту же ссылку, пока вход не изменился. В Redux для этого есть `createSelector` (библиотека Reselect),
+в Pinia — `getters`, во Vue — `computed`, в MobX — `computed`.
+
+## 7. Middleware и плагины
+
+Middleware — функция, которая встаёт между `dispatch` и reducer: может залогировать action, изменить его, отложить
+или отменить. Сигнатура как в Redux — три вложенные функции:
+
+```js
+// api — getState и dispatch, next — следующий middleware (или настоящий dispatch)
+const logger = (api) => (next) => (action) => {
+  console.log('action:', action.type);
+  const result = next(action); // передаём дальше по цепочке
+  console.log('новое состояние:', api.getState());
+  return result;
+};
+
+function applyMiddleware(store, ...middlewares) {
+  let dispatch = () => {
+    throw new Error('dispatch во время настройки middleware');
+  };
+  const api = { getState: store.getState, dispatch: (action) => dispatch(action) };
+
+  // Каждый middleware оборачивает следующий: logger(thunk(store.dispatch))
+  dispatch = middlewares.map((mw) => mw(api)).reduceRight((next, mw) => mw(next), store.dispatch);
+
+  return { ...store, dispatch };
+}
+
+const store = applyMiddleware(createReduxStore(todosReducer, { todos: [] }), logger);
+store.dispatch({ type: 'todos/added', id: 1, text: 'Хлеб' });
+// 'action: todos/added'
+// новое состояние: { todos: [ { id: 1, text: 'Хлеб', done: false } ] }
+```
+
+### Сохранение в localStorage
+
+Persist — частый плагин: при каждом изменении сохраняем состояние, при старте — читаем. Подробнее о хранилищах —
+в уроке [Хранилища браузера](/learn/frontend/browser-storage). Важные детали:
+
+- `localStorage` хранит **только строки** — нужен `JSON.stringify` / `JSON.parse`;
+- `JSON.parse` бросает на битых данных, `getItem` / `setItem` — в приватном режиме или при переполнении квоты,
+  поэтому всё в `try/catch`;
+- сохраняем не всё, а только нужное (`pick`).
+
+```js
+function loadState(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : JSON.parse(raw);
+  } catch {
+    return fallback; // битый JSON или хранилище недоступно
+  }
+}
+
+function persist(store, key, pick = (state) => state) {
+  return store.subscribe((state) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(pick(state)));
+    } catch (error) {
+      console.warn('Не удалось сохранить состояние', error); // например, QuotaExceededError
+    }
+  });
+}
+
+const initial = { theme: 'light', todos: [] };
+const store = createStore({ ...initial, ...loadState('app', {}) });
+persist(store, 'app', (s) => ({ theme: s.theme })); // сохраняем только тему
+
+store.setState((s) => ({ ...s, theme: 'dark' }));
+localStorage.getItem('app'); // '{"theme":"dark"}'
+```
+
+Слияние `{ ...initial, ...loadState(…) }` нужно, чтобы новые поля, которых не было в старом сохранении,
+получили значения по умолчанию.
+
+## 8. Реактивный стор на Proxy
+
+Совсем другой подход — как во Vue ([реактивность](/learn/vue/reactivity)), MobX и Valtio: состояние **можно
+мутировать**, а изменения ловит `Proxy`.
+
+```js
+function reactive(target, onChange) {
+  return new Proxy(target, {
+    get(obj, key, receiver) {
+      const value = Reflect.get(obj, key, receiver);
+      // Вложенные объекты тоже оборачиваем, чтобы ловить state.user.name = …
+      return typeof value === 'object' && value !== null ? reactive(value, onChange) : value;
+    },
+    set(obj, key, value, receiver) {
+      const oldValue = obj[key];
+      const ok = Reflect.set(obj, key, value, receiver);
+      if (!Object.is(oldValue, value)) onChange(key, value);
+      return ok;
+    },
+  });
+}
+
+const state = reactive({ count: 0, user: { name: 'Аня' }, todos: [] }, (key, value) => {
+  console.log(`${String(key)} = ${JSON.stringify(value)}`);
+});
+
+state.count++; // 'count = 1'
+state.user.name = 'Иван'; // 'name = "Иван"'
+state.todos.push('хлеб'); // '0 = "хлеб"'
+state.count = 1; // ничего — значение то же
+```
+
+Код компонентов короче, но у наивной реализации много подводных камней:
+
+```js
+state.user === state.user; // false — каждый get создаёт новый Proxy (Vue кэширует их в WeakMap)
+
+const { count } = state; // деструктуризация копирует примитив
+state.count++;
+console.log(count); // 1 — переменная больше не связана со стором
+
+delete state.count; // изменение не замечено — нет ловушки deleteProperty
+
+for (let i = 0; i < 3; i++) state.todos.push(i); // три уведомления вместо одного
+```
+
+Настоящие библиотеки решают это: кэш прокси, ловушки `deleteProperty`/`has`/`ownKeys`, отслеживание зависимостей
+(подписчик знает, какие поля он читал) и батчинг уведомлений. Свою Proxy-реактивность для продакшена
+не пишите — берите Vue, MobX или Valtio.
+
+## 9. Подключение к UI
+
+### Чистый DOM
+
+Функция `render` принимает состояние и обновляет DOM. Её вызывают один раз при старте и при каждом изменении:
+
+```js
+const store = createStore({ count: 0 });
+const countEl = document.querySelector('#count');
+const button = document.querySelector('#inc');
+
+function render(state) {
+  countEl.textContent = String(state.count);
+}
+
+render(store.getState()); // первая отрисовка
+store.subscribe(render); // и при каждом изменении
+
+button.addEventListener('click', () => {
+  store.setState((s) => ({ ...s, count: s.count + 1 }));
+});
+```
+
+Поток данных однонаправленный: событие → `setState` → подписчики → `render`. DOM никогда не читается как
+источник правды. Перерисовывать большие куски DOM целиком дорого — эту задачу решает виртуальный DOM
+([урок](/learn/frontend/shadow-virtual-dom)).
+
+### React
+
+В React для внешних сторов есть хук `useSyncExternalStore(subscribe, getSnapshot)`. Наш API подходит
+к нему без переделок: `subscribe` принимает колбэк и возвращает отписку.
+
+```jsx
+import { useSyncExternalStore } from 'react';
+
+function useStore(store, selector = (state) => state) {
+  return useSyncExternalStore(store.subscribe, () => selector(store.getState()));
+}
+
+function Counter() {
+  const count = useStore(store, (s) => s.count); // перерисуется только при смене count
+  return <button onClick={() => store.setState((s) => ({ ...s, count: s.count + 1 }))}>{count}</button>;
+}
+```
+
+`getSnapshot` должен возвращать одну и ту же ссылку, пока данные не изменились, — селектор вида
+`(s) => ({ … })` вызовет бесконечные перерисовки (React предупредит об этом в консоли). Так устроен `useStore` в Zustand.
+
+### Vue
+
+Во Vue достаточно положить состояние стора в `shallowRef` и обновлять его из подписки:
+
+```js
+import { shallowRef, onUnmounted } from 'vue';
+
+export function useStore(store) {
+  const state = shallowRef(store.getState());
+  const unsubscribe = store.subscribe((next) => {
+    state.value = next; // новая ссылка → Vue перерисует компонент
+  });
+  onUnmounted(unsubscribe); // не забываем отписаться
+  return state;
+}
+```
+
+`shallowRef` реагирует только на замену `.value` — это ровно наш иммутабельный контракт, и Vue не оборачивает
+весь объект в глубокий Proxy.
+
+## 10. Подходы и библиотеки
+
+| Подход | Идея | Плюсы | Минусы | Библиотеки |
+|---|---|---|---|---|
+| `getState`/`setState`/`subscribe` + селекторы | наблюдатель + иммутабельность | мало кода, просто понять | логика изменений разбросана | Zustand (`zustand/vanilla` — почти наш `createStore`), Nano Stores |
+| actions + reducer + middleware | все изменения через `dispatch` | предсказуемость, DevTools, тесты | больше шаблонного кода | Redux, Redux Toolkit (`createSlice`, `configureStore`) |
+| Proxy-реактивность | мутируй — изменения отследятся | минимум кода в компонентах | «магия», ловушки с деструктуризацией | Vue `reactive`, Pinia, MobX, Valtio |
+| Вычисляемые значения | производное — через мемоизацию | нет рассинхрона | надо следить за ссылками | Reselect `createSelector`, Pinia `getters`, MobX `computed` |
+
+Пара уточнений: Redux Toolkit внутри `createSlice` использует Immer — вы пишете `state.todos.push(…)`, а Immer
+по черновику собирает новый иммутабельный объект. Pinia — стор поверх реактивности Vue: `state`, `getters`
+(производное), `actions` (изменения) и плагины через `pinia.use`. Valtio даёт мутируемый `proxy` и иммутабельный
+снимок `useSnapshot` для React.
+
+## Как не надо
+
+**Мутировать состояние напрямую**
+
+```js
+// ✗ ссылка та же — подписчики и селекторы не узнают об изменении
+store.getState().todos.push(newTodo);
+
+// ✓ новый массив и новый объект состояния
+store.setState((s) => ({ ...s, todos: [...s.todos, newTodo] }));
+```
+
+**Хранить производные данные**
+
+```js
+// ✗ два источника правды: items и total
+store.setState((s) => ({ ...s, items: nextItems, total: calcTotal(nextItems) }));
+
+// ✓ храним только items, total — селектор
+const selectTotal = (s) => s.items.reduce((sum, i) => sum + i.price * i.qty, 0);
+```
+
+**Один гигантский стор на всё, включая инпуты**
+
+```js
+// ✗ каждое нажатие клавиши уведомляет всё приложение
+input.addEventListener('input', (e) => {
+  store.setState((s) => ({ ...s, forms: { ...s.forms, search: e.target.value } }));
+});
+
+// ✓ черновик формы — локально; в стор — только результат
+form.addEventListener('submit', () => {
+  store.setState((s) => ({ ...s, filters: { ...s.filters, search: input.value } }));
+});
+```
+
+**Забывать отписываться**
+
+```js
+// ✗ каждый «монтаж» виджета добавляет подписчика; старые живут вечно и держат DOM в памяти
+function mountWidget(el) {
+  store.subscribe((s) => (el.textContent = s.user.name));
+}
+
+// ✓ возвращаем отписку и вызываем её при удалении виджета
+function mountWidget(el) {
+  return store.subscribe((s) => (el.textContent = s.user.name));
+}
+const unmount = mountWidget(el);
+unmount();
+```
+
+**Уведомлять подписчиков на каждое обновление в цикле**
+
+```js
+// ✗ 100 вызовов setState — 100 уведомлений и 100 перерисовок
+for (const item of newItems) {
+  store.setState((s) => ({ ...s, items: [...s.items, item] }));
+}
+
+// ✓ одно обновление — одно уведомление
+store.setState((s) => ({ ...s, items: [...s.items, ...newItems] }));
+```
+
+Когда объединить обновления вручную нельзя, применяют **батчинг**: `setState` меняет состояние сразу,
+а уведомление откладывает через `queueMicrotask` и отправляет одно на всю пачку. React 18 и Vue
+батчат обновления автоматически.
+
+**Класть несериализуемое в сохраняемое состояние**
+
+```js
+// ✗ после JSON-круга Set станет {}, Date — строкой, экземпляр класса потеряет методы, DOM-узел — сломается
+store.setState((s) => ({ ...s, tags: new Set(['js']), createdAt: new Date(), user: new User('Аня'), el: button }));
+
+// ✓ только простые данные: массивы, объекты, строки, числа, boolean, null
+store.setState((s) => ({ ...s, tags: ['js'], createdAt: Date.now(), user: { name: 'Аня' } }));
+```
+
+**Вызывать setState внутри подписчика без условия**
+
+```js
+// ✗ подписчик создаёт новое состояние → снова вызывается → … → RangeError: Maximum call stack size exceeded
+store.subscribe((state) => {
+  store.setState({ ...state, seen: true });
+});
+
+// ✓ условие останова — или, лучше, вычислить это значение селектором
+store.subscribe((state) => {
+  if (!state.seen) store.setState({ ...state, seen: true });
+});
+```
+
+## Шпаргалка
+
+| Задача | Решение |
+|---|---|
+| Ядро | `getState`, `setState`, `subscribe` → возвращает отписку |
+| Изменить | только новым объектом: spread, `map`, `filter` |
+| Несколько изменений подряд | апдейтер `setState((s) => …)` |
+| Пропустить пустое обновление | `Object.is(next, state)` |
+| Подписка на кусок | селектор + сравнение старого и нового значения |
+| Селектор возвращает объект | мемоизация или `shallowEqual` |
+| Правила изменения в одном месте | reducer + `dispatch(action)` |
+| Сумма, фильтр, счётчик | вычислять селектором, не хранить |
+| Логи, persist, асинхронность | middleware вокруг `dispatch` / подписка |
+| localStorage | `JSON` + `try/catch` + `pick` + значения по умолчанию |
+| UI | `render(state)` + `subscribe`; React — `useSyncExternalStore`; Vue — `shallowRef` |
+
+## Проверь себя
+
+<Quiz client:visible id="architecture/state-manager/mutation" options={['1 2', '0 1', '1 1', '0 0']} answer={1}>
+  Что выведет код? `createStore` — версия с проверкой `Object.is(nextState, state)`.
+
+  ```js
+  const store = createStore({ count: 0 });
+  let calls = 0;
+  store.subscribe(() => calls++);
+
+  const state = store.getState();
+  state.count++;
+  store.setState(state);
+
+  console.log(calls, store.getState().count);
+  ```
+
+  <Fragment slot="explanation">
+    `state.count++` мутировал тот же объект, и `setState` получил ту же ссылку: `Object.is` вернул `true`,
+    подписчики не вызваны. Данные при этом изменились — `count` равен `1`. Худший вариант: состояние и UI разошлись.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="architecture/state-manager/updater" options={['0', '1', '2', 'TypeError']} answer={1}>
+  Чему будет равен `store.getState().count`?
+
+  ```js
+  const store = createStore({ count: 0 });
+  const s = store.getState();
+
+  store.setState({ ...s, count: s.count + 1 });
+  store.setState({ ...s, count: s.count + 1 });
+  ```
+
+  <Fragment slot="explanation">
+    Оба вызова строят новое состояние из одного снимка `s`, где `count` равен `0`, — второй просто записывает
+    ту же `1`. С апдейтером `setState((s) => ({ ...s, count: s.count + 1 }))` получилось бы `2`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="architecture/state-manager/leak" options={['1', '3', '0', 'TypeError']} answer={1}>
+  Сколько раз увеличится `calls`?
+
+  ```js
+  const store = createStore({ count: 0 });
+  let calls = 0;
+
+  function mount() {
+    store.subscribe(() => calls++);
+  }
+
+  mount();
+  mount();
+  mount();
+  store.setState({ count: 1 });
+  ```
+
+  <Fragment slot="explanation">
+    Каждый вызов `mount` создаёт **новую** стрелочную функцию, и `Set` хранит все три — от дублей он защищает,
+    только если подписывать одну и ту же ссылку. Отписка не вызывается, поэтому подписчики копятся: это утечка.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="architecture/state-manager/selector-object" options={['0', '1', '2']} answer={2}>
+  Сколько раз сработает `listener`? `subscribeSelector` — версия из урока со сравнением через `Object.is`.
+
+  ```js
+  const store = createStore({ user: { name: 'Аня' }, theme: 'light' });
+  let calls = 0;
+
+  subscribeSelector(store, (s) => ({ theme: s.theme }), () => calls++);
+
+  store.setState((s) => ({ ...s, user: { ...s.user } }));
+  store.setState((s) => ({ ...s, user: { ...s.user } }));
+  ```
+
+  <Fragment slot="explanation">
+    Тема не менялась, но селектор каждый раз возвращает **новый** объект, а два разных объекта по `Object.is`
+    не равны. Подписчик срабатывает на любое изменение стора. Решение: селектор `(s) => s.theme` или `shallowEqual`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="architecture/state-manager/unknown-action" options={['0', '1', 'Error: Unknown action', 'undefined']} answer={0}>
+  Сколько раз вызовется подписчик?
+
+  ```js
+  const store = createReduxStore(todosReducer, { todos: [] });
+  let calls = 0;
+  store.subscribe(() => calls++);
+
+  store.dispatch({ type: 'todos/renamed', id: 1 }); // такого case нет
+  console.log(calls);
+  ```
+
+  <Fragment slot="explanation">
+    Ветка `default` возвращает **то же** состояние, `setState` видит ту же ссылку и не уведомляет подписчиков.
+    Поэтому reducer обязан возвращать исходный `state` для чужих actions, а не копию `{ ...state }`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="architecture/state-manager/infinite-loop"
+  options={['Подписчик вызовется один раз', 'Подписчик вызовется два раза', 'RangeError: Maximum call stack size exceeded', 'Ничего не произойдёт']}
+  answer={2}
+>
+  Что произойдёт?
+
+  ```js
+  const store = createStore({ count: 0, seen: false });
+
+  store.subscribe((state) => {
+    store.setState({ ...state, seen: true });
+  });
+
+  store.setState({ count: 1, seen: false });
+  ```
+
+  <Fragment slot="explanation">
+    Подписчик каждый раз создаёт **новый** объект, поэтому проверка `Object.is` не срабатывает: `setState` снова
+    вызывает подписчика, тот снова `setState` — бесконечная рекурсия. С условием `if (!state.seen)` подписчик
+    вызвался бы два раза и остановился.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="architecture/state-manager/proxy-destructuring" options={['0', '1', '2', 'undefined']} answer={1}>
+  Что выведет код? `reactive` — Proxy-версия из урока.
+
+  ```js
+  const state = reactive({ count: 0 }, () => {});
+
+  state.count++;
+  const { count } = state;
+  state.count++;
+
+  console.log(count);
+  ```
+
+  <Fragment slot="explanation">
+    Деструктуризация скопировала в переменную примитив `1` — дальше она никак не связана с прокси.
+    `state.count` стал `2`, а `count` остался `1`. Поэтому во Vue есть `toRefs`, а в Pinia — `storeToRefs`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="architecture/state-manager/json-set" options={["['js', 'css']", '{}', '[]', 'TypeError']} answer={1}>
+  Что окажется в `restored.tags`?
+
+  ```js
+  const state = { tags: new Set(['js', 'css']) };
+  localStorage.setItem('app', JSON.stringify(state));
+
+  const restored = JSON.parse(localStorage.getItem('app'));
+  console.log(restored.tags);
+  ```
+
+  <Fragment slot="explanation">
+    У `Set` нет собственных перечисляемых свойств, и `JSON.stringify` превращает его в `{}`. Данные потеряны
+    без всякой ошибки. В сохраняемом состоянии держите массивы: `[...set]` при записи и `new Set(arr)` при чтении.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Надёжная отписка" level="easy">
+  У стора подписчики хранятся в массиве, а отписаться нельзя. Сделайте так, чтобы `subscribe` возвращал функцию
+  отписки, и повторный вызов этой функции ничего не ломал.
+
+  ```js
+  function createStore(initialState) {
+    let state = initialState;
+    let listeners = [];
+
+    return {
+      getState: () => state,
+      setState(nextState) {
+        state = nextState;
+        listeners.forEach((listener) => listener(state));
+      },
+      subscribe(listener) {
+        listeners.push(listener); // отписки нет
+      },
+    };
+  }
+
+  const store = createStore({ count: 0 });
+  const unsubscribe = store.subscribe(console.log);
+  unsubscribe();
+  unsubscribe(); // без ошибок и без побочных эффектов
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    subscribe(listener) {
+      listeners.push(listener);
+      let active = true;
+
+      return () => {
+        if (!active) return; // уже отписались
+        active = false;
+        listeners = listeners.filter((l) => l !== listener);
+      };
+    },
+    ```
+
+    Функция отписки замыкает свой `listener` и флаг `active`. `filter` создаёт новый массив, поэтому отписка
+    во время рассылки уведомлений не сбивает текущий `forEach`: он продолжает идти по старому массиву.
+  </Fragment>
+</Task>
+
+<Task title="Селектор с поверхностным сравнением" level="medium">
+  Добавьте в `subscribeSelector` четвёртый параметр `equalityFn` (по умолчанию `Object.is`) и напишите
+  `shallowEqual(a, b)`: объекты равны, если у них одинаковые ключи и значения по `Object.is`.
+
+  ```js
+  const store = createStore({ user: { name: 'Аня', age: 20 }, theme: 'light' });
+
+  subscribeSelector(
+    store,
+    (s) => ({ name: s.user.name, theme: s.theme }),
+    () => console.log('изменилось'),
+    shallowEqual,
+  );
+
+  store.setState((s) => ({ ...s, user: { ...s.user, age: 21 } })); // ничего
+  store.setState((s) => ({ ...s, theme: 'dark' })); // 'изменилось'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function shallowEqual(a, b) {
+      if (Object.is(a, b)) return true;
+      if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+
+      const keysA = Object.keys(a);
+      const keysB = Object.keys(b);
+      if (keysA.length !== keysB.length) return false;
+
+      return keysA.every((key) => Object.hasOwn(b, key) && Object.is(a[key], b[key]));
+    }
+
+    function subscribeSelector(store, selector, listener, equalityFn = Object.is) {
+      let selected = selector(store.getState());
+
+      return store.subscribe((state) => {
+        const nextSelected = selector(state);
+        if (equalityFn(selected, nextSelected)) return;
+
+        const prevSelected = selected;
+        selected = nextSelected;
+        listener(nextSelected, prevSelected);
+      });
+    }
+    ```
+
+    Проверка `Object.hasOwn` отличает `{ a: 1, b: undefined }` от `{ a: 1, c: undefined }`. Сравнение
+    поверхностное: вложенные объекты сравниваются по ссылке — и при иммутабельных обновлениях этого достаточно.
+    Так же работает `shallow` в Zustand.
+  </Fragment>
+</Task>
+
+<Task title="Reducer для корзины" level="medium">
+  Напишите `cartReducer` и селекторы `selectTotal` и `selectCount`. Actions:
+
+  - `{ type: 'cart/added', product }` — добавить товар; если он уже есть — увеличить `qty` на 1;
+  - `{ type: 'cart/removed', id }` — удалить;
+  - `{ type: 'cart/qtyChanged', id, qty }` — задать количество; `qty` от нуля и меньше — удалить;
+  - `{ type: 'cart/cleared' }` — очистить.
+
+  Состояние не мутировать, для неизвестного action возвращать тот же объект.
+
+  ```js
+  const store = createReduxStore(cartReducer, { items: [] });
+  const apple = { id: 1, title: 'Яблоко', price: 30 };
+
+  store.dispatch({ type: 'cart/added', product: apple });
+  store.dispatch({ type: 'cart/added', product: apple });
+  store.dispatch({ type: 'cart/added', product: { id: 2, title: 'Хлеб', price: 50 } });
+  selectTotal(store.getState()); // 110
+  selectCount(store.getState()); // 3
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function cartReducer(state = { items: [] }, action) {
+      switch (action.type) {
+        case 'cart/added': {
+          const exists = state.items.some((item) => item.id === action.product.id);
+          if (exists) {
+            return {
+              ...state,
+              items: state.items.map((item) =>
+                item.id === action.product.id ? { ...item, qty: item.qty + 1 } : item,
+              ),
+            };
+          }
+          return { ...state, items: [...state.items, { ...action.product, qty: 1 }] };
+        }
+        case 'cart/removed':
+          return { ...state, items: state.items.filter((item) => item.id !== action.id) };
+        case 'cart/qtyChanged':
+          if (action.qty <= 0) return cartReducer(state, { type: 'cart/removed', id: action.id });
+          return {
+            ...state,
+            items: state.items.map((item) => (item.id === action.id ? { ...item, qty: action.qty } : item)),
+          };
+        case 'cart/cleared':
+          return { ...state, items: [] };
+        default:
+          return state;
+      }
+    }
+
+    const selectTotal = (state) => state.items.reduce((sum, item) => sum + item.price * item.qty, 0);
+    const selectCount = (state) => state.items.reduce((sum, item) => sum + item.qty, 0);
+    ```
+
+    Сумма и количество не хранятся в состоянии — их невозможно забыть обновить. Значение по умолчанию
+    `state = { items: [] }` позволяет получить начальное состояние вызовом `cartReducer(undefined, { type: 'init' })` —
+    так Redux инициализирует стор.
+  </Fragment>
+</Task>
+
+<Task title="Persist-middleware" level="medium">
+  Напишите `createPersistMiddleware({ key, storage, pick })` в формате Redux-middleware и функцию
+  `loadPersisted({ key, storage, fallback })`. Требования:
+
+  - сохранять, только если состояние действительно изменилось;
+  - сохранять объект с версией: `{ version: 1, data }`; при чтении другой версии — вернуть `fallback`;
+  - ошибки `JSON.parse` и хранилища не должны ломать приложение.
+
+  ```js
+  const storage = localStorage;
+  const fallback = { items: [] };
+
+  const store = applyMiddleware(
+    createReduxStore(cartReducer, loadPersisted({ key: 'cart', storage, fallback })),
+    createPersistMiddleware({ key: 'cart', storage }),
+  );
+  ```
+
+  <Fragment slot="hint">
+    Запомните `api.getState()` до `next(action)` и сравните со значением после — по ссылке.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function createPersistMiddleware({ key, storage, pick = (state) => state }) {
+      return (api) => (next) => (action) => {
+        const prevState = api.getState();
+        const result = next(action);
+        const nextState = api.getState();
+
+        if (nextState !== prevState) {
+          try {
+            storage.setItem(key, JSON.stringify({ version: 1, data: pick(nextState) }));
+          } catch (error) {
+            console.warn('persist: не удалось сохранить', error); // квота, приватный режим
+          }
+        }
+        return result;
+      };
+    }
+
+    function loadPersisted({ key, storage, fallback }) {
+      try {
+        const raw = storage.getItem(key);
+        if (raw === null) return fallback;
+
+        const parsed = JSON.parse(raw);
+        return parsed.version === 1 ? { ...fallback, ...parsed.data } : fallback;
+      } catch {
+        return fallback; // битый JSON или недоступное хранилище
+      }
+    }
+    ```
+
+    Версия нужна, когда меняется форма состояния: старое сохранение с другой структурой лучше выбросить
+    (или смигрировать), чем загрузить и сломать приложение. `storage` передаётся параметром — так middleware
+    легко протестировать с объектом-заглушкой и переключить на `sessionStorage`. Для частых изменений
+    запись стоит ещё и троттлить: `setItem` синхронный и блокирует основной поток.
+  </Fragment>
+</Task>
+
+<Task title="Undo / redo" level="hard">
+  Напишите функцию высшего порядка `undoable(reducer, limit = 50)`, которая оборачивает любой reducer
+  и добавляет историю. Состояние — `{ past, present, future }`. Actions `history/undo` и `history/redo`
+  двигаются по истории, любое изменение `present` очищает `future`. Если reducer вернул то же состояние —
+  историю не трогать. В `past` хранить не больше `limit` шагов.
+
+  ```js
+  function counter(state = 0, action) {
+    switch (action.type) {
+      case 'inc': return state + 1;
+      case 'dec': return state - 1;
+      default: return state;
+    }
+  }
+
+  const reducer = undoable(counter);
+  const store = createReduxStore(reducer, reducer(undefined, { type: '@@init' }));
+  // { past: [], present: 0, future: [] }
+
+  store.dispatch({ type: 'inc' });
+  store.dispatch({ type: 'inc' });
+  store.dispatch({ type: 'inc' }); // present: 3
+  store.dispatch({ type: 'history/undo' });
+  store.dispatch({ type: 'history/undo' }); // present: 1
+  store.dispatch({ type: 'history/redo' }); // present: 2
+  store.dispatch({ type: 'dec' }); // present: 1, future: []
+  ```
+
+  <Fragment slot="hint">
+    Undo: последний элемент `past` становится `present`, а текущий `present` уходит в начало `future`.
+    Redo — зеркально.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function undoable(reducer, limit = 50) {
+      const initial = { past: [], present: reducer(undefined, { type: '@@init' }), future: [] };
+
+      return function (state = initial, action) {
+        const { past, present, future } = state;
+
+        switch (action.type) {
+          case 'history/undo':
+            if (past.length === 0) return state;
+            return {
+              past: past.slice(0, -1),
+              present: past[past.length - 1],
+              future: [present, ...future],
+            };
+          case 'history/redo':
+            if (future.length === 0) return state;
+            return {
+              past: [...past, present],
+              present: future[0],
+              future: future.slice(1),
+            };
+          default: {
+            const nextPresent = reducer(present, action);
+            if (nextPresent === present) return state; // ничего не изменилось — шаг не нужен
+            return {
+              past: [...past, present].slice(-limit), // обрезаем старые шаги
+              present: nextPresent,
+              future: [], // новое действие отменяет «будущее»
+            };
+          }
+        }
+      };
+    }
+    ```
+
+    История дешёвая именно благодаря иммутабельности: в `past` лежат ссылки на старые состояния, а неизменённые
+    части дерева у соседних состояний общие — копируется только путь до изменения. С мутирующим стором пришлось бы
+    делать глубокие копии на каждый шаг. Обёртка работает с любым reducer, например `undoable(cartReducer)`.
+  </Fragment>
+</Task>

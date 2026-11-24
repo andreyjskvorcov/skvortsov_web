@@ -1,0 +1,551 @@
+---
+title: Промисы (Promise)
+description: Что такое промис, его состояния, then, catch и finally, цепочки, обработка ошибок, Promise.all, allSettled, race и any
+section: js
+order: 21
+level: middle
+tags: [promise, async, then, catch]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Промис** (`Promise`, «обещание») — объект, который представляет результат операции, ещё не завершённой
+на момент вызова: запроса к серверу, таймера, чтения файла. Промис «обещает»: результат будет — либо значение,
+либо ошибка, — и позволяет подписаться на него заранее.
+
+## Зачем нужны промисы
+
+В уроке [Колбэки](/learn/js/callbacks) асинхронные шаги передавали друг другу функциями — и получали «пирамиду»:
+
+```js
+boilWater(() => {
+  addVegetables(() => {
+    addSalt(() => {
+      cook(10, () => {
+        serve(() => console.log('Суп готов!'));
+      });
+    });
+  });
+});
+```
+
+Если каждая функция возвращает промис, те же шаги выстраиваются в плоскую цепочку, а ошибки ловятся в одном месте:
+
+```js
+boilWater()
+  .then(() => addVegetables())
+  .then(() => addSalt())
+  .then(() => cook(10))
+  .then(() => serve())
+  .then(() => console.log('Суп готов!'))
+  .catch((error) => console.log('Суп не получился:', error.message));
+```
+
+## 1. Создание промиса
+
+Промис создаётся конструктором `new Promise` (про конструкторы — в уроке [Конструкторы](/learn/js/constructor)).
+Ему передают функцию-**исполнитель** с двумя параметрами — `resolve` и `reject`:
+
+```js
+const promise = new Promise((resolve, reject) => {
+  // асинхронная работа…
+  setTimeout(() => {
+    const success = true;
+
+    if (success) {
+      resolve('Данные получены'); // успех — передаём значение
+    } else {
+      reject(new Error('Сервер не отвечает')); // ошибка — передаём объект Error
+    }
+  }, 1000);
+});
+```
+
+- `resolve(value)` — операция завершилась успешно, `value` — её результат;
+- `reject(error)` — операция завершилась ошибкой. Передавайте в `reject` объект `Error`, а не строку:
+  у него есть стек вызовов, и по нему проще найти, где ошибка возникла.
+
+<Callout type="info">
+  Исполнитель запускается **сразу и синхронно** — в момент `new Promise`. Асинхронным будет только то,
+  что внутри него отложено (таймер, запрос), и вызов обработчиков `then`.
+</Callout>
+
+### Состояния промиса
+
+| Состояние | Что значит |
+|---|---|
+| `pending` — ожидание | операция ещё идёт |
+| `fulfilled` — выполнен | вызван `resolve`, есть значение |
+| `rejected` — отклонён | вызван `reject` или в исполнителе брошена ошибка, есть причина |
+
+Промис меняет состояние **один раз**. После первого `resolve` или `reject` все следующие вызовы игнорируются:
+
+```js
+new Promise((resolve, reject) => {
+  resolve(1);
+  resolve(2); // игнорируется
+  reject(new Error('поздно')); // тоже игнорируется
+}).then((value) => console.log(value)); // 1
+```
+
+Выполненный или отклонённый промис называют **завершённым** (settled).
+
+## 2. then, catch и finally
+
+Результат промиса получают, подписавшись на него методами:
+
+```js
+promise
+  .then((value) => {
+    console.log('Успех:', value); // вызовется при resolve
+  })
+  .catch((error) => {
+    console.log('Ошибка:', error.message); // вызовется при reject
+  })
+  .finally(() => {
+    console.log('Готово'); // вызовется в любом случае
+  });
+```
+
+| Метод | Когда вызывается обработчик | Что получает |
+|---|---|---|
+| `.then(onFulfilled)` | промис выполнен | значение |
+| `.catch(onRejected)` | промис отклонён | ошибку |
+| `.finally(onFinally)` | в любом случае | ничего — и не меняет результат |
+
+`finally` подходит для действий, которые нужны при любом исходе: скрыть индикатор загрузки, закрыть соединение.
+Он пропускает значение или ошибку дальше по цепочке без изменений.
+
+Подписаться можно и на уже завершённый промис — обработчик всё равно вызовется:
+
+```js
+const ready = Promise.resolve(42); // сразу выполненный промис
+
+ready.then((value) => console.log(value)); // 42
+```
+
+`Promise.resolve(value)` и `Promise.reject(error)` — короткий способ создать сразу завершённый промис.
+
+## 3. Цепочки
+
+Каждый `then` **возвращает новый промис**. Поэтому вызовы можно продолжать цепочкой, а значение, которое вернул
+обработчик, получит следующий `then`:
+
+```js
+Promise.resolve(2)
+  .then((x) => x * 10) // 20
+  .then((x) => x + 1) // 21
+  .then((x) => console.log(x)); // 21
+```
+
+Если обработчик вернёт **промис**, следующий `then` дождётся его и получит его значение:
+
+```js
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+delay(1000)
+  .then(() => {
+    console.log('Прошла 1 секунда');
+    return delay(1000); // следующий then ждёт этот промис
+  })
+  .then(() => console.log('Прошло 2 секунды'));
+```
+
+<Callout type="warning">
+  Самая частая ошибка — забыть `return`. Тогда следующий `then` получит `undefined` и **не будет ждать**
+  запущенную операцию:
+
+  ```js
+  getUser()
+    .then((user) => {
+      getOrders(user.id); // нет return — промис потерялся
+    })
+    .then((orders) => console.log(orders)); // undefined
+  ```
+</Callout>
+
+### Не вкладывайте then в then
+
+Вложенные `then` возвращают «пирамиду», от которой промисы и должны избавлять:
+
+```js
+// ✗ Пирамида
+getUser().then((user) => {
+  getOrders(user.id).then((orders) => {
+    getDetails(orders[0]).then((details) => console.log(details));
+  });
+});
+
+// ✓ Плоская цепочка: каждый шаг возвращает промис
+getUser()
+  .then((user) => getOrders(user.id))
+  .then((orders) => getDetails(orders[0]))
+  .then((details) => console.log(details));
+```
+
+## 4. Обработка ошибок
+
+Ошибка «проваливается» вниз по цепочке, пропуская все `then`, до ближайшего `catch`. Ошибкой считается и `reject`,
+и `throw` внутри обработчика:
+
+```js
+Promise.resolve(1)
+  .then((x) => {
+    throw new Error('Что-то пошло не так');
+  })
+  .then((x) => console.log('Этот шаг пропущен'))
+  .catch((error) => console.log('Поймали:', error.message)); // 'Поймали: Что-то пошло не так'
+```
+
+После `catch` цепочка **продолжается как успешная** — со значением, которое вернул `catch`:
+
+```js
+Promise.reject(new Error('Нет сети'))
+  .catch(() => 'данные из кеша') // ошибку обработали и подставили запасное значение
+  .then((data) => console.log(data)); // 'данные из кеша'
+```
+
+Если в `catch` нужно только записать ошибку в лог, а цепочку оставить отклонённой, — бросьте ошибку дальше:
+`catch((error) => { log(error); throw error; })`.
+
+<Callout type="danger">
+  Отклонённый промис без `catch` — **необработанная ошибка**. В браузере она появится в консоли
+  (`Uncaught (in promise)`), а в Node.js по умолчанию **завершит процесс**. Каждая цепочка должна заканчиваться `catch`
+  или передаваться тому, кто её обработает.
+</Callout>
+
+## 5. Несколько промисов сразу
+
+Когда нужно запустить несколько операций **параллельно**, используют статические методы `Promise`.
+Все они принимают массив промисов и возвращают один промис:
+
+| Метод | Выполняется, когда | Отклоняется, когда | Результат |
+|---|---|---|---|
+| `Promise.all` | выполнены **все** | отклонён **любой** — сразу | массив значений в исходном порядке |
+| `Promise.allSettled` | завершены **все** | никогда | массив `{ status, value }` / `{ status, reason }` |
+| `Promise.race` | завершён **первый** — с его результатом | первый завершённый отклонён | значение или ошибка первого |
+| `Promise.any` | выполнен **первый успешный** | отклонены **все** — `AggregateError` | значение первого успешного |
+
+```js
+const [user, orders] = await Promise.all([getUser(), getOrders()]); // ждём оба, параллельно
+
+const results = await Promise.allSettled([getUser(), getOrders()]);
+results.forEach((r) => console.log(r.status)); // 'fulfilled' или 'rejected' — у каждого свой
+```
+
+(`await` — ожидание промиса внутри асинхронной функции, подробно — в уроке [Асинхронные функции](/learn/js/async-await).)
+
+Как выбрать:
+
+- нужны **все** результаты, и без любого из них продолжать нет смысла — `all`;
+- нужны все результаты, но часть может не загрузиться — `allSettled`;
+- нужно ограничить время ожидания — `race` с таймером (задача ниже);
+- есть несколько источников одних данных, подойдёт любой — `any`.
+
+## Проверь себя
+
+<Quiz client:visible id="js/promise/executor-sync" options={['1 2 3', '1 3 2', '2 1 3', '3 1 2']} answer={0}>
+  В каком порядке выведутся числа?
+
+  ```js
+  console.log(1);
+
+  new Promise((resolve) => {
+    console.log(2);
+    resolve();
+  });
+
+  console.log(3);
+  ```
+
+  <Fragment slot="explanation">
+    Исполнитель промиса запускается сразу и синхронно, поэтому `2` выводится между `1` и `3`.
+    Асинхронными были бы только обработчики `then`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/promise/then-async" options={['1 2 3', '1 3 2', '2 1 3', '3 1 2']} answer={1}>
+  А здесь?
+
+  ```js
+  console.log(1);
+
+  Promise.resolve().then(() => console.log(2));
+
+  console.log(3);
+  ```
+
+  <Fragment slot="explanation">
+    Обработчик `then` всегда вызывается асинхронно — даже если промис уже выполнен. Сначала доработает весь синхронный код,
+    поэтому `3` выводится раньше `2`. Почему так — в уроке [Event loop](/learn/js/event-loop).
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/promise/settle-once" options={['1', '2', 'Ошибка «поздно»', '1, затем ошибка']} answer={0}>
+  Что выведет код?
+
+  ```js
+  new Promise((resolve, reject) => {
+    resolve(1);
+    resolve(2);
+    reject(new Error('поздно'));
+  })
+    .then((value) => console.log(value))
+    .catch((error) => console.log(error.message));
+  ```
+
+  <Fragment slot="explanation">
+    Промис меняет состояние один раз — первым вызовом `resolve(1)`. Следующие `resolve` и `reject` игнорируются.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/promise/chain-value" options={['2', '20', '21', 'undefined']} answer={2}>
+  Что выведет код?
+
+  ```js
+  Promise.resolve(2)
+    .then((x) => x * 10)
+    .then((x) => x + 1)
+    .then((x) => console.log(x));
+  ```
+
+  <Fragment slot="explanation">
+    Каждый `then` возвращает новый промис со значением, которое вернул обработчик: `2 → 20 → 21`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/promise/missing-return" options={['20', 'undefined', '2', 'Ошибка']} answer={1}>
+  Что выведет код?
+
+  ```js
+  Promise.resolve(2)
+    .then((x) => {
+      x * 10;
+    })
+    .then((x) => console.log(x));
+  ```
+
+  <Fragment slot="explanation">
+    У стрелочной функции с фигурными скобками нет неявного `return`. Обработчик ничего не вернул — следующий `then`
+    получил `undefined`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/promise/catch-continues"
+  options={["'A'", "'B'", "'A', затем 'B'", "Только ошибка в консоли"]}
+  answer={1}
+>
+  Что выведет код?
+
+  ```js
+  Promise.reject(new Error('сбой'))
+    .then(() => console.log('A'))
+    .catch(() => 'B')
+    .then((value) => console.log(value));
+  ```
+
+  <Fragment slot="explanation">
+    Отклонённый промис пропускает `then` с `'A'` и попадает в `catch`. `catch` вернул `'B'` — цепочка дальше
+    идёт как успешная, и последний `then` выводит `'B'`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/promise/all-reject"
+  options={['[1, 2, 3]', '[1, undefined, 3]', "Ошибка 'два' — в catch", '[1, 3]']}
+  answer={2}
+>
+  Что попадёт в обработчик?
+
+  ```js
+  Promise.all([
+    Promise.resolve(1),
+    Promise.reject(new Error('два')),
+    Promise.resolve(3),
+  ])
+    .then((values) => console.log(values))
+    .catch((error) => console.log(error.message));
+  ```
+
+  <Fragment slot="explanation">
+    `Promise.all` отклоняется, как только отклонён любой промис, — значения остальных теряются.
+    Чтобы получить результат каждого, используйте `Promise.allSettled`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/promise/finally-value" options={['undefined', "'готово'", "'данные'", 'Ошибка']} answer={2}>
+  Что выведет код?
+
+  ```js
+  Promise.resolve('данные')
+    .finally(() => 'готово')
+    .then((value) => console.log(value));
+  ```
+
+  <Fragment slot="explanation">
+    `finally` не получает значение и не меняет его: то, что он вернул, игнорируется, и дальше по цепочке идёт `'данные'`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Функция delay" level="easy">
+  Напишите функцию `delay(ms)`, которая возвращает промис, выполняющийся через `ms` миллисекунд.
+
+  ```js
+  delay(1000).then(() => console.log('Прошла секунда'));
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function delay(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    ```
+
+    `setTimeout` вызовет `resolve` через `ms` миллисекунд — промис выполнится, и сработает `then`.
+    `reject` здесь не нужен: таймер не может завершиться ошибкой, поэтому второй параметр исполнителя не объявляем.
+  </Fragment>
+</Task>
+
+<Task title="Из колбэка — в промис" level="easy">
+  Функция `loadUser` сообщает результат колбэком в стиле Node.js: первым аргументом ошибка, вторым — данные.
+  Напишите обёртку `loadUserAsync(id)`, которая возвращает промис.
+
+  ```js
+  function loadUser(id, callback) {
+    setTimeout(() => {
+      if (id <= 0) callback(new Error('Неверный id'));
+      else callback(null, { id, name: 'Аня' });
+    }, 500);
+  }
+
+  loadUserAsync(1).then((user) => console.log(user.name)); // 'Аня'
+  loadUserAsync(-1).catch((error) => console.log(error.message)); // 'Неверный id'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function loadUserAsync(id) {
+      return new Promise((resolve, reject) => {
+        loadUser(id, (error, user) => {
+          if (error) reject(error);
+          else resolve(user);
+        });
+      });
+    }
+    ```
+
+    Это называется **промисификация**. В Node.js для функций с таким колбэком есть готовая `util.promisify`,
+    а многие API (например, `fs/promises`) уже возвращают промисы.
+  </Fragment>
+</Task>
+
+<Task title="Последовательно и параллельно" level="medium">
+  Есть функция `fetchPrice(product)`, которая возвращает промис с ценой примерно через секунду.
+  Посчитайте сумму цен трёх товаров двумя способами: последовательной цепочкой `then` и параллельно через `Promise.all`.
+  Сколько времени займёт каждый вариант?
+
+  ```js
+  function fetchPrice(product) {
+    const prices = { хлеб: 50, молоко: 90, сыр: 400 };
+    return new Promise((resolve) => setTimeout(() => resolve(prices[product]), 1000));
+  }
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    // Последовательно: ~3 секунды — каждый запрос начинается после предыдущего
+    let total = 0;
+    fetchPrice('хлеб')
+      .then((price) => {
+        total += price;
+        return fetchPrice('молоко');
+      })
+      .then((price) => {
+        total += price;
+        return fetchPrice('сыр');
+      })
+      .then((price) => console.log(total + price)); // 540
+
+    // Параллельно: ~1 секунда — все запросы стартуют сразу
+    Promise.all(['хлеб', 'молоко', 'сыр'].map(fetchPrice))
+      .then((prices) => prices.reduce((sum, price) => sum + price, 0))
+      .then((sum) => console.log(sum)); // 540
+    ```
+
+    Если запросы не зависят друг от друга, запускайте их параллельно. Последовательность нужна, только когда
+    следующему шагу нужен результат предыдущего — например, сначала пользователь, потом его заказы.
+  </Fragment>
+</Task>
+
+<Task title="Ограничение по времени" level="medium">
+  Напишите функцию `withTimeout(promise, ms)`. Она возвращает промис, который выполняется с результатом `promise`,
+  если тот успел за `ms` миллисекунд, а иначе отклоняется с ошибкой `'Превышено время ожидания'`.
+
+  ```js
+  withTimeout(delay(500).then(() => 'успел'), 1000).then(console.log); // 'успел'
+  withTimeout(delay(2000), 1000).catch((e) => console.log(e.message)); // 'Превышено время ожидания'
+  ```
+
+  <Fragment slot="hint">
+    Устройте «гонку» исходного промиса и промиса-таймера, который отклоняется через `ms`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function withTimeout(promise, ms) {
+      let timerId;
+
+      const timeout = new Promise((_, reject) => {
+        timerId = setTimeout(() => reject(new Error('Превышено время ожидания')), ms);
+      });
+
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timerId));
+    }
+    ```
+
+    `Promise.race` завершается вместе с первым завершившимся промисом. `finally` очищает таймер, если исходный промис
+    успел раньше, — иначе таймер висел бы впустую. Сама операция при этом не отменяется: промис нельзя «остановить»,
+    для отмены запросов есть `AbortController`.
+  </Fragment>
+</Task>
+
+<Task title="Повтор при ошибке" level="hard">
+  Напишите функцию `retry(fn, attempts)`. Она вызывает `fn` (функцию, возвращающую промис) и, если промис отклонён,
+  повторяет вызов — всего не больше `attempts` раз. Если все попытки неудачны, возвращённый промис отклоняется
+  с последней ошибкой.
+
+  ```js
+  let calls = 0;
+  const unstable = () => (++calls < 3 ? Promise.reject(new Error(`Сбой ${calls}`)) : Promise.resolve('ok'));
+
+  retry(unstable, 5).then(console.log); // 'ok' — с третьей попытки
+  ```
+
+  <Fragment slot="hint">
+    Решение рекурсивное: в `catch` вызовите `retry` ещё раз с `attempts - 1`, а когда попытки кончились — бросьте ошибку.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function retry(fn, attempts) {
+      return fn().catch((error) => {
+        if (attempts <= 1) throw error; // попытки кончились — отдаём последнюю ошибку
+        return retry(fn, attempts - 1);
+      });
+    }
+    ```
+
+    `catch` возвращает промис следующей попытки, поэтому вся цепочка ждёт её результата. `throw error` внутри `catch`
+    оставляет итоговый промис отклонённым. В реальных приложениях между попытками добавляют паузу, которая растёт
+    с каждой попыткой (`delay(2 ** n * 100)`), чтобы не перегружать сервер.
+  </Fragment>
+</Task>

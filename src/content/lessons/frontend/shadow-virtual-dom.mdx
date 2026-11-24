@@ -1,0 +1,1212 @@
+---
+title: Shadow DOM и Virtual DOM
+description: Что такое Shadow DOM и Virtual DOM, как с ними работать, чем они отличаются и где их применять не стоит
+section: frontend
+order: 5
+level: middle
+tags: [dom, shadow-dom, virtual-dom, web-components, react, vue]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+Названия похожи, но это **две несвязанные вещи**:
+
+- **Shadow DOM** — стандарт браузера. Он прячет внутренности элемента в отдельное дерево со своими стилями. Задача — **инкапсуляция**.
+- **Virtual DOM** — приём внутри библиотек (React, Vue). Интерфейс описывается обычными JS-объектами, библиотека сравнивает старое и новое описание и вносит в настоящий DOM только разницу. Задача — **удобно вычислять обновления**.
+
+Shadow DOM можно использовать вместе с React, Virtual DOM — без всякого Shadow DOM. Общее у них только слово «DOM».
+
+## 1. Сначала — настоящий DOM
+
+DOM — дерево объектов, которое браузер строит из HTML. Через него JavaScript читает и меняет страницу:
+
+```js
+const title = document.querySelector('h1');
+title.textContent = 'Привет';
+title.classList.add('active');
+```
+
+Сам вызов `textContent = …` дешёвый. Дорого то, что браузер делает **после** изменения:
+
+| Этап | Что происходит | Когда запускается |
+|---|---|---|
+| Style | пересчёт, какие CSS-правила к чему применяются | изменились классы, атрибуты, структура |
+| Layout (reflow) | расчёт размеров и позиций элементов | изменились размеры, текст, шрифт, структура |
+| Paint | отрисовка пикселей | изменился внешний вид |
+| Composite | сборка слоёв в кадр | почти всегда; `transform` и `opacity` часто обходятся только им |
+
+Браузер старается копить изменения и пересчитывать один раз перед кадром. Проблемы начинаются, когда код мешает ему это делать:
+
+```js
+// ✗ чтение размера после записи заставляет браузер сделать layout прямо сейчас — и так в каждой итерации
+for (const item of items) {
+  item.style.width = '200px';
+  console.log(item.offsetHeight);
+}
+
+// ✓ сначала все чтения, потом все записи — один layout
+const heights = items.map((item) => item.offsetHeight);
+items.forEach((item) => {
+  item.style.width = '200px';
+});
+```
+
+<Callout type="info">
+  «DOM медленный» — неточная формулировка. Медленными бывают лишние layout и paint и множество
+  несогласованных изменений, разбросанных по коду. Одна точечная запись в DOM — это быстро.
+</Callout>
+
+## 2. Shadow DOM: отдельное дерево внутри элемента
+
+Shadow DOM позволяет прикрепить к элементу **теневое дерево** (shadow tree). Его корень — `shadowRoot`, а сам элемент называют **хостом** (host).
+
+```js
+const host = document.querySelector('#host');
+const root = host.attachShadow({ mode: 'open' });
+
+root.innerHTML = `
+  <style>p { color: crimson; }</style>
+  <p>Я внутри shadow DOM</p>
+`;
+
+host.shadowRoot === root; // true — для mode: 'open'
+document.querySelector('p'); // не найдёт абзац внутри shadow DOM
+```
+
+Что важно знать про `attachShadow`:
+
+- вызвать можно один раз на элемент — повторный вызов бросит ошибку;
+- работает не на всех элементах: на своих custom elements и на ряде обычных (`div`, `span`, `section`, `article`, `p`, `header` и др.), но, например, не на `img` или `input`;
+- `document.querySelector` и стили страницы внутрь теневого дерева не заглядывают.
+
+### open и closed
+
+| Режим | `host.shadowRoot` | Доступ снаружи |
+|---|---|---|
+| `mode: 'open'` | ссылка на корень | любой код может зайти внутрь через `host.shadowRoot` |
+| `mode: 'closed'` | `null` | корень есть только у того, кто сохранил результат `attachShadow` |
+
+```js
+const root = host.attachShadow({ mode: 'closed' });
+
+host.shadowRoot; // null
+root.innerHTML = '<p>Работаю как обычно</p>'; // сам автор доступ не потерял
+```
+
+<Callout type="warning">
+  `closed` — не защита. Любой скрипт на странице может заранее подменить `Element.prototype.attachShadow`
+  и перехватить корень, а расширения браузера и DevTools видят всё. Закрытый режим лишь мешает случайно
+  залезть во внутренности — и заодно усложняет тесты. По умолчанию используйте `open`.
+</Callout>
+
+### Нативные элементы уже так устроены
+
+Ползунок `input type="range"`, панель управления `video controls`, кнопка у `input type="file"` — у них есть внутренняя разметка, которой нет в вашем HTML. Браузеры строят её во внутреннем (user-agent) теневом дереве. В Chrome его можно увидеть: DevTools → Settings → **Show user agent shadow DOM**.
+
+```html
+<video src="movie.mp4" controls></video>
+<input type="range" min="0" max="100">
+```
+
+Поэтому их так трудно стилизовать: внутренности закрыты, а доступ дают только нестандартные псевдоэлементы вроде `::-webkit-slider-thumb`.
+
+## 3. Стили: что проходит через границу, а что нет
+
+Инкапсуляция работает **в обе стороны**:
+
+- селекторы страницы не находят элементы внутри теневого дерева;
+- `style` внутри теневого дерева не влияет на страницу.
+
+```html
+<style>
+  p { font-weight: bold; } /* не достанет до p внутри shadow DOM */
+  body { color: navy; font-family: Georgia; } /* а это дойдёт — наследование */
+</style>
+```
+
+Но граница не глухая. Внутрь проходят:
+
+| Проходит | Не проходит |
+|---|---|
+| **наследуемые свойства**: `color`, `font-*`, `line-height`, `visibility`… | обычные селекторы: `.title`, `p`, `user-card h3` |
+| **CSS-переменные** (`--accent`) — они тоже наследуются | стили из глобальных CSS-файлов и CSS-модулей |
+| стили самого хоста (`user-card { margin: 16px; }`) | |
+
+Наследование идёт по отображаемому дереву: текст внутри shadow DOM унаследует `color` от хоста, как обычный потомок. Если нужен полностью «чистый лист», внутри пишут `:host { all: initial; }`.
+
+### Селекторы внутри shadow DOM
+
+| Селектор | Где писать | Что выбирает |
+|---|---|---|
+| `:host` | внутри | сам хост |
+| `:host(.active)`, `:host([disabled])` | внутри | хост, если он подходит под селектор |
+| `::slotted(img)` | внутри | элементы из light DOM, попавшие в слот (только верхнего уровня) |
+| `user-card::part(title)` | снаружи | элемент внутри с атрибутом `part="title"` |
+
+```css
+/* внутри shadow DOM */
+:host {
+  display: block; /* custom element по умолчанию — inline */
+}
+:host([disabled]) {
+  opacity: 0.5;
+}
+::slotted(img) {
+  border-radius: 50%; /* ::slotted(img) span — уже нельзя, только сам слотнутый элемент */
+}
+```
+
+```css
+/* на странице */
+user-card::part(title) {
+  text-transform: uppercase;
+}
+user-card::part(button):hover {
+  background: black; /* псевдоклассы после ::part работают */
+}
+```
+
+<Callout type="tip">
+  Стили страницы для хоста **побеждают** `:host`, а стили страницы для слотнутых элементов побеждают `::slotted()`.
+  Так задумано: внутренние стили — значения по умолчанию, внешний мир может их переопределить.
+</Callout>
+
+Итого, у автора компонента есть два официальных канала для темизации:
+
+1. **CSS-переменные** — для значений: цвета, отступы, радиусы (`var(--card-accent, royalblue)` со значением по умолчанию).
+2. **`part`** — когда нужно дать снаружи стилизовать целый внутренний элемент.
+
+## 4. Слоты: как контент попадает внутрь
+
+Дети хоста (**light DOM**) по умолчанию не отображаются, если у хоста есть теневое дерево. Показать их можно через `slot`:
+
+```html
+<user-card>
+  <img slot="avatar" src="anna.jpg" alt="">
+  <p>Фронтендер, люблю CSS</p>
+</user-card>
+```
+
+```html
+<!-- теневое дерево user-card -->
+<slot name="avatar"></slot>
+<h3 part="title">Анна</h3>
+<slot>Пользователь ничего о себе не написал</slot>
+```
+
+- `slot name="avatar"` принимает детей с атрибутом `slot="avatar"`;
+- безымянный `slot` (слот по умолчанию) принимает всё остальное, включая текст;
+- содержимое внутри `slot` — запасной вариант, если ничего не передали.
+
+Слот **не переносит** элементы. `img` и `p` остаются детьми `user-card` в обычном DOM: их находит `document.querySelector`, к ним применяются стили страницы. Слот только говорит, **где их нарисовать**. При смене содержимого слот получает событие `slotchange`, а `slot.assignedElements()` вернёт назначенные элементы.
+
+## 5. События и retargeting
+
+Событие, возникшее внутри shadow DOM, снаружи выглядит так, будто оно произошло на хосте. Это называется **retargeting**:
+
+```js
+// пользователь кликнул по button внутри user-card
+document.addEventListener('click', (event) => {
+  event.target; // user-card — внутренности не раскрываются
+  event.composedPath()[0]; // button — полный путь (для open-корня)
+});
+```
+
+Выйдет ли событие за пределы теневого дерева, решает флаг `composed`:
+
+| Событие | `composed` | Видно снаружи? |
+|---|---|---|
+| `click`, `keydown`, `input`, `focus` и другие пользовательские | `true` | да, с подменённым `target` |
+| `new CustomEvent('x', { bubbles: true })`, отправленное с элемента внутри | `false` (по умолчанию) | нет, останавливается на `shadowRoot` |
+| `new CustomEvent('x', { bubbles: true, composed: true })` | `true` | да |
+
+Самый простой способ сообщить что-то наружу — отправить событие **с самого хоста**: `this.dispatchEvent(…)`. Хост живёт в обычном DOM, поэтому хватит `bubbles: true`.
+
+## 6. Custom elements: свой тег
+
+Shadow DOM чаще всего используют вместе с **custom elements** — своими HTML-тегами. Вместе (плюс `template`) это называют **Web Components**.
+
+```js
+class MyElement extends HTMLElement {
+  static observedAttributes = ['name']; // за какими атрибутами следить
+
+  constructor() {
+    super(); // обязательно первым
+    this.attachShadow({ mode: 'open' });
+  }
+
+  connectedCallback() {
+    // элемент вставлен в документ (может вызываться повторно при перемещении)
+  }
+
+  disconnectedCallback() {
+    // элемент удалён из документа — убираем таймеры и глобальные слушатели
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    // изменился один из observedAttributes
+  }
+}
+
+customElements.define('my-element', MyElement);
+```
+
+| Правило | Почему |
+|---|---|
+| в имени обязателен дефис: `user-card`, а не `usercard` | чтобы не пересечься с будущими стандартными тегами |
+| в `constructor` не читать атрибуты и детей элемента | их там может ещё не быть; это место для `attachShadow` и начальной подготовки |
+| `attributeChangedCallback` срабатывает только для `observedAttributes` | остальные атрибуты браузер не отслеживает |
+| `attributeChangedCallback` может прийти раньше `connectedCallback` | при разборе HTML начальные атрибуты сообщаются до вставки |
+
+Про классы, `constructor` и `super` — в уроке [Конструкторы](/learn/js/constructor).
+
+### Полный пример: user-card
+
+```js
+const template = document.createElement('template');
+template.innerHTML = `
+  <style>
+    :host { display: block; padding: 16px; border: 1px solid #ddd; border-radius: 12px; }
+    :host([followed]) { border-color: var(--card-accent, royalblue); }
+    .name { margin: 8px 0; color: var(--card-accent, royalblue); }
+    ::slotted(img) { width: 48px; height: 48px; border-radius: 50%; }
+  </style>
+  <slot name="avatar"></slot>
+  <h3 class="name" part="name"></h3>
+  <slot>Пользователь ничего о себе не написал</slot>
+  <button type="button" part="button"></button>
+`;
+
+class UserCard extends HTMLElement {
+  static observedAttributes = ['name', 'followed'];
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+    this.shadowRoot.append(template.content.cloneNode(true));
+    // слушатель на своём внутреннем элементе вешаем один раз — он умрёт вместе с компонентом
+    this.shadowRoot.querySelector('button').addEventListener('click', () => this.toggle());
+  }
+
+  connectedCallback() {
+    this.render();
+  }
+
+  attributeChangedCallback() {
+    this.render();
+  }
+
+  get followed() {
+    return this.hasAttribute('followed');
+  }
+
+  set followed(value) {
+    this.toggleAttribute('followed', Boolean(value));
+  }
+
+  toggle() {
+    this.followed = !this.followed;
+    // событие с самого хоста: снаружи его увидят без composed
+    this.dispatchEvent(new CustomEvent('follow-change', {
+      bubbles: true,
+      detail: { followed: this.followed },
+    }));
+  }
+
+  render() {
+    // textContent, а не innerHTML — имя пользователя не станет HTML-кодом
+    this.shadowRoot.querySelector('.name').textContent = this.getAttribute('name') ?? 'Аноним';
+    this.shadowRoot.querySelector('button').textContent = this.followed ? 'Отписаться' : 'Подписаться';
+  }
+}
+
+customElements.define('user-card', UserCard);
+```
+
+Использование и темизация на странице:
+
+```html
+<user-card name="Анна">
+  <img slot="avatar" src="anna.jpg" alt="">
+  <p>Фронтендер, люблю CSS</p>
+</user-card>
+
+<style>
+  user-card {
+    --card-accent: crimson; /* переменная пройдёт внутрь */
+    font-family: system-ui; /* наследуется внутрь */
+  }
+  user-card::part(button) {
+    padding: 8px 16px;
+  }
+</style>
+
+<script type="module">
+  document.addEventListener('follow-change', (event) => {
+    console.log(event.target.getAttribute('name'), event.detail.followed); // 'Анна' true
+  });
+</script>
+```
+
+### Уборка в disconnectedCallback
+
+Слушатели на своих внутренних элементах удалять не нужно. А вот всё, что держит ссылку на компонент снаружи, — таймеры, слушатели на `window` и `document`, `ResizeObserver`, — нужно снимать, иначе удалённый элемент продолжит работать и не освободит память:
+
+```js
+class LiveClock extends HTMLElement {
+  #timer = null;
+  #abort = null;
+
+  connectedCallback() {
+    this.#tick();
+    this.#timer = setInterval(() => this.#tick(), 1000);
+
+    this.#abort = new AbortController();
+    window.addEventListener('resize', () => this.#tick(), { signal: this.#abort.signal });
+  }
+
+  disconnectedCallback() {
+    clearInterval(this.#timer);
+    this.#abort.abort(); // снимет все слушатели, добавленные с этим signal
+  }
+
+  #tick() {
+    this.textContent = new Date().toLocaleTimeString('ru-RU');
+  }
+}
+
+customElements.define('live-clock', LiveClock);
+```
+
+Подписка в `connectedCallback` и отписка в `disconnectedCallback` — парные действия: элемент можно вставить, удалить и вставить снова. Подробнее про слушатели — в уроке [Обработчики событий](/learn/js/event-listeners).
+
+### Декларативный Shadow DOM
+
+Теневое дерево можно описать прямо в HTML, без JavaScript, — это полезно для серверного рендеринга:
+
+```html
+<user-card>
+  <template shadowrootmode="open">
+    <style>:host { display: block; }</style>
+    <slot></slot>
+  </template>
+  <p>Контент из light DOM</p>
+</user-card>
+```
+
+Парсер превращает такой `template` в `shadowRoot` хоста. Работает это при разборе HTML страницы; строка, вставленная через `innerHTML`, так не обрабатывается.
+
+## 7. Virtual DOM: интерфейс как данные
+
+Теперь совсем другая тема. В React или Vue вы не говорите «добавь элемент, поменяй класс». Вы описываете, **как интерфейс должен выглядеть** при текущих данных, а библиотека сама решает, что поменять в DOM.
+
+Описание — это дерево обычных объектов (**vnode**, виртуальных узлов). JSX — синтаксис для их создания:
+
+```jsx
+// JSX
+<ul class="list">
+  <li>Молоко</li>
+</ul>
+
+// после компиляции — вызов функции, которая возвращает объект
+h('ul', { class: 'list' }, h('li', null, 'Молоко'));
+```
+
+Цикл обновления:
+
+1. **render** — компонент заново строит виртуальное дерево по новым данным;
+2. **diff** — библиотека сравнивает новое дерево со старым;
+3. **patch** — в настоящий DOM вносится только найденная разница.
+
+Сравнение и применение разницы вместе называют **reconciliation** (согласование).
+
+### Игрушечный Virtual DOM
+
+Напишем учебную версию: `h` создаёт vnode, `render` строит из него DOM, `diff` возвращает список патчей — просто данные.
+
+```js
+function h(type, props, ...children) {
+  return {
+    type,
+    props: props ?? {},
+    children: children
+      .flat()
+      .filter((child) => child != null && child !== false) // null, undefined, false — не рисуем
+      .map((child) => (typeof child === 'object' ? child : String(child))), // числа → строки
+  };
+}
+
+function render(vnode) {
+  if (typeof vnode === 'string') return document.createTextNode(vnode);
+
+  const el = document.createElement(vnode.type);
+  for (const [name, value] of Object.entries(vnode.props)) {
+    el.setAttribute(name, value);
+  }
+  for (const child of vnode.children) {
+    el.appendChild(render(child));
+  }
+  return el;
+}
+```
+
+Текстовый узел — просто строка. Сравнение:
+
+```js
+// узлы разного вида: строка и элемент, разные строки или разные теги
+function changed(a, b) {
+  return typeof a !== typeof b || (typeof a === 'string' ? a !== b : a.type !== b.type);
+}
+
+function diffProps(oldProps, newProps) {
+  const set = {};
+  const remove = [];
+  for (const [name, value] of Object.entries(newProps)) {
+    if (oldProps[name] !== value) set[name] = value;
+  }
+  for (const name of Object.keys(oldProps)) {
+    if (!(name in newProps)) remove.push(name);
+  }
+  return { set, remove };
+}
+
+// path — индексы детей от корня: [1, 0] — первый ребёнок второго ребёнка
+function diff(oldNode, newNode, path = []) {
+  if (oldNode === undefined) return [{ type: 'CREATE', path, node: newNode }];
+  if (newNode === undefined) return [{ type: 'REMOVE', path }];
+  if (changed(oldNode, newNode)) return [{ type: 'REPLACE', path, node: newNode }];
+  if (typeof newNode === 'string') return []; // строки равны — ничего не делаем
+
+  const patches = [];
+  const { set, remove } = diffProps(oldNode.props, newNode.props);
+  if (Object.keys(set).length || remove.length) {
+    patches.push({ type: 'PROPS', path, set, remove });
+  }
+
+  const oldCh = oldNode.children;
+  const newCh = newNode.children;
+  const common = Math.min(oldCh.length, newCh.length);
+
+  for (let i = 0; i < common; i++) {
+    patches.push(...diff(oldCh[i], newCh[i], [...path, i]));
+  }
+  for (let i = common; i < newCh.length; i++) {
+    patches.push(...diff(undefined, newCh[i], [...path, i]));
+  }
+  // удаляем с конца, чтобы индексы ещё не удалённых детей не сдвигались
+  for (let i = oldCh.length - 1; i >= common; i--) {
+    patches.push(...diff(oldCh[i], undefined, [...path, i]));
+  }
+  return patches;
+}
+```
+
+Проверим:
+
+```js
+const before = h('ul', { class: 'list' },
+  h('li', null, 'Молоко'),
+  h('li', null, 'Хлеб'),
+);
+
+const after = h('ul', { class: 'list' },
+  h('li', null, 'Молоко'),
+  h('li', { class: 'done' }, 'Хлеб'),
+  h('li', null, 'Сыр'),
+);
+
+diff(before, after);
+// [
+//   { type: 'PROPS', path: [1], set: { class: 'done' }, remove: [] },
+//   { type: 'CREATE', path: [2], node: { type: 'li', props: {}, children: ['Сыр'] } },
+// ]
+```
+
+Вместо перерисовки всего списка — два точечных действия. Осталось применить их к DOM:
+
+```js
+function patch(root, patches) {
+  const find = (path) => path.reduce((node, i) => node.childNodes[i], root);
+
+  for (const p of patches) {
+    if (p.type === 'CREATE') {
+      find(p.path.slice(0, -1)).appendChild(render(p.node));
+    } else if (p.type === 'REMOVE') {
+      find(p.path).remove();
+    } else if (p.type === 'REPLACE') {
+      const fresh = render(p.node);
+      if (p.path.length === 0) root = fresh; // заменили корень — вернём новый
+      else find(p.path).replaceWith(fresh);
+    } else if (p.type === 'PROPS') {
+      const el = find(p.path);
+      for (const [name, value] of Object.entries(p.set)) el.setAttribute(name, value);
+      for (const name of p.remove) el.removeAttribute(name);
+    }
+  }
+  return root;
+}
+
+let root = render(before);
+document.body.append(root);
+root = patch(root, diff(before, after));
+```
+
+Настоящие библиотеки устроены сложнее: компоненты, обработчики событий, свойства вместо атрибутов, планировщик. Но идея та же. И главное упрощение React: если у узлов **разный тип**, поддерево не сравнивается, а пересоздаётся целиком — как наш `REPLACE`.
+
+## 8. Ключи в списках
+
+Наш `diff` сравнивает детей **по позиции**. Добавим элемент в начало списка:
+
+```js
+const before = h('ul', null, h('li', null, 'Б'), h('li', null, 'В'));
+const after = h('ul', null, h('li', null, 'А'), h('li', null, 'Б'), h('li', null, 'В'));
+
+diff(before, after).map((p) => `${p.type} ${p.path.join('.')}`);
+// ['REPLACE 0.0', 'REPLACE 1.0', 'CREATE 2']
+```
+
+Нужна была одна вставка, а получилось три операции: каждый `li` получил текст соседа. **Ключ** (`key`) — стабильный идентификатор, по которому библиотека понимает, что «Б» до и после — один и тот же элемент, и его достаточно сдвинуть.
+
+Хуже лишней работы — **перепутанное состояние**. DOM-узел и состояние компонента привязаны к ключу. Если ключ — индекс, после удаления первого элемента состояние «переедет» к соседу:
+
+```jsx
+// ✗ key — индекс
+{todos.map((todo, index) => (
+  <li key={index}>
+    <input type="checkbox" /> {todo.text}
+  </li>
+))}
+```
+
+Отметили галочкой «Купить молоко» (индекс 0) и удалили его. Теперь под индексом 0 — «Позвонить маме». React видит тот же ключ `0`, переиспользует тот же `li` с тем же `input` и меняет только текст. Галочка стоит у «Позвонить маме».
+
+```jsx
+// ✓ key — id из данных
+{todos.map((todo) => (
+  <li key={todo.id}>
+    <input type="checkbox" /> {todo.text}
+  </li>
+))}
+```
+
+| Ключ | Когда подходит |
+|---|---|
+| `id` из данных | всегда, если он есть |
+| индекс | список статичный: не сортируется, не фильтруется, элементы не добавляются в начало и середину |
+| `Math.random()` | никогда — новый ключ на каждом рендере, все элементы пересоздаются и теряют состояние |
+
+## 9. Батчинг и где VDOM не нужен
+
+Если в одном обработчике состояние меняется несколько раз, библиотеки не перерисовывают интерфейс после каждого изменения. React 18+ объединяет обновления (**batching**) и делает один рендер; Vue копит изменения и применяет их асинхронно, в следующем тике. Так DOM получает одну согласованную пачку изменений — ровно то, что нужно браузеру из раздела 1.
+
+```jsx
+function handleClick() {
+  setCount((c) => c + 1);
+  setFlag((f) => !f);
+  // один рендер, а не два
+}
+```
+
+Подробнее — в уроках [useState](/learn/react/use-state) и [Реактивность во Vue](/learn/vue/reactivity).
+
+### VDOM — не синоним скорости
+
+Diff — это **дополнительная** работа поверх изменения DOM: построить новое дерево, сравнить, только потом применить. Точечное изменение вроде `counter.textContent = count` всегда не медленнее. Ценность VDOM в другом: можно писать интерфейс **декларативно** («вот как он выглядит при этих данных») и не держать в голове все переходы между состояниями, получая при этом приличную производительность.
+
+Поэтому есть разные подходы:
+
+| Фреймворк | Как обновляет DOM |
+|---|---|
+| React | VDOM: перерисовка компонента и сравнение деревьев |
+| Vue 3 | VDOM, но компилятор шаблонов помечает статические части и типы изменений — при обновлении сравниваются только динамические узлы |
+| Svelte | без VDOM: компилятор генерирует код, который меняет нужные узлы напрямую |
+| Solid | без VDOM: мелкозернистая реактивность (сигналы) обновляет конкретные узлы |
+
+## 10. Главное отличие — таблица
+
+| | Shadow DOM | Virtual DOM |
+|---|---|---|
+| Что это | API браузера, часть стандарта DOM | приём внутри JS-библиотек |
+| Где живёт | в браузере, настоящие DOM-узлы | в памяти JS, обычные объекты |
+| Задача | инкапсуляция разметки и стилей | вычисление минимальных изменений DOM |
+| Решает проблему | конфликты CSS, утечки стилей, «залезание» во внутренности | ручное управление DOM при декларативном UI |
+| Кто использует | Web Components, нативные `video` и `input` | React, Vue, Preact, Inferno |
+| Нужна библиотека | нет | да (или своя реализация) |
+| Видно в DevTools | да, как `#shadow-root` | нет, это данные (есть React/Vue DevTools) |
+| Влияет на стили | да, изолирует их | нет |
+| Влияет на скорость | почти нет | может уменьшить число изменений DOM, но сам стоит времени |
+| Можно вместе | да: React-компонент может рендерить custom element с Shadow DOM | |
+
+## Как работать и как не надо
+
+### Менять руками DOM, которым управляет библиотека
+
+```jsx
+// ✗ React не знает про это изменение и при следующем рендере перезапишет или запутается
+useEffect(() => {
+  document.querySelector('.title').textContent = 'Новый заголовок';
+});
+
+// ✓ меняем состояние — DOM обновит библиотека
+const [title, setTitle] = useState('Заголовок');
+return <h1 className="title">{title}</h1>;
+```
+
+`ref` — для того, чего нет в декларативном мире: фокус, размеры, сторонняя библиотека-виджет. Не добавляйте и не удаляйте через `ref` детей, которыми управляет React или Vue.
+
+### Индекс как ключ в динамическом списке
+
+```jsx
+// ✗
+items.map((item, index) => <Row key={index} item={item} />);
+// ✓
+items.map((item) => <Row key={item.id} item={item} />);
+```
+
+### Считать, что VDOM сделает всё быстрым
+
+```jsx
+// ✗ на каждый рендер родителя — новый массив, тяжёлая фильтрация, рендер 5000 строк
+function List({ items, query }) {
+  const visible = items.filter((item) => expensiveMatch(item, query));
+  return visible.map((item) => <Row key={item.id} item={item} />);
+}
+
+// ✓ кэшируем вычисление; для тысяч строк — виртуализация списка
+function List({ items, query }) {
+  const visible = useMemo(() => items.filter((item) => expensiveMatch(item, query)), [items, query]);
+  return visible.map((item) => <Row key={item.id} item={item} />);
+}
+```
+
+Diff дешевле лишнего DOM, но не бесплатен: лишние рендеры всё равно стоят времени. Сначала измерьте — см. урок [Отладка](/learn/frontend/debugging).
+
+### Closed shadow root «для безопасности»
+
+```js
+// ✗ «теперь никто не залезет» — залезет, если очень нужно
+this.attachShadow({ mode: 'closed' });
+
+// ✓ open; секреты не храните в DOM вообще
+this.attachShadow({ mode: 'open' });
+```
+
+### Стилизовать внутренности компонента глобальным CSS
+
+```css
+/* ✗ не сработает: селектор не проходит в shadow DOM */
+user-card .name { color: red; }
+user-card h3 { color: red; }
+
+/* ✓ официальные каналы */
+user-card { --card-accent: red; }
+user-card::part(name) { color: red; }
+```
+
+Если вы автор компонента — заранее решите, что можно менять снаружи, и дайте это через переменные и `part`.
+
+### Забыть уборку в disconnectedCallback
+
+```js
+class ScrollSpy extends HTMLElement {
+  // ✗ только подписка: после удаления элемента слушатель живёт и держит компонент в памяти
+  // connectedCallback() { window.addEventListener('scroll', () => this.update()); }
+
+  // ✓ подписка и парная отписка
+  connectedCallback() {
+    this.abort = new AbortController();
+    window.addEventListener('scroll', () => this.update(), { signal: this.abort.signal });
+  }
+
+  disconnectedCallback() {
+    this.abort.abort();
+  }
+
+  update() {}
+}
+```
+
+### Shadow DOM там, где хватит scoped-стилей
+
+Если нужно просто, чтобы стили компонента не конфликтовали в вашем же приложении, хватит CSS-модулей, `style scoped` во Vue или БЭМ. Shadow DOM оправдан, когда компонент живёт в **чужом** окружении: виджет на сторонних сайтах, дизайн-система для проектов на разных фреймворках. Цена — сложнее темизация, формы (поля внутри shadow DOM не участвуют в обычной отправке формы без дополнительного API) и иногда SSR.
+
+## Шпаргалка
+
+| Задача | Как |
+|---|---|
+| создать теневое дерево | `el.attachShadow({ mode: 'open' })` |
+| найти корень | `el.shadowRoot` (`null` для closed) |
+| стилизовать хост изнутри | `:host`, `:host([attr])` |
+| стилизовать переданный контент | `::slotted(selector)` |
+| дать стилизовать внутренний элемент | `part="name"` внутри, `tag::part(name)` снаружи |
+| темизация значений | CSS-переменные с fallback: `var(--x, red)` |
+| принять контент | `slot`, `slot name="..."` |
+| событие наружу | `this.dispatchEvent(new CustomEvent('x', { bubbles: true }))` с хоста или `composed: true` |
+| свой тег | `class X extends HTMLElement`, `customElements.define('x-tag', X)` |
+| реакция на атрибут | `static observedAttributes` + `attributeChangedCallback` |
+| уборка | `disconnectedCallback`: таймеры, глобальные слушатели, observers |
+| SSR теневого дерева | `template shadowrootmode="open"` |
+| VDOM-цикл | render → diff → patch |
+| ключи в списках | стабильный `id`, не индекс и не `Math.random()` |
+| VDOM и скорость | удобство декларативного UI; лишние рендеры всё равно убирать |
+
+## Проверь себя
+
+<Quiz
+  client:visible
+  id="frontend/shadow-virtual-dom/relation"
+  options={[
+    'Virtual DOM — это реализация Shadow DOM в React',
+    'Shadow DOM — браузерный стандарт инкапсуляции, Virtual DOM — приём библиотек для вычисления обновлений; они не связаны',
+    'Shadow DOM — устаревшее название Virtual DOM',
+    'Оба — внутренние механизмы браузера для ускорения рендеринга',
+  ]}
+  answer={1}
+>
+  Как соотносятся Shadow DOM и Virtual DOM?
+
+  <Fragment slot="explanation">
+    Общее у них только слово «DOM». Shadow DOM — настоящие узлы в браузере с изоляцией стилей.
+    Virtual DOM — JS-объекты в памяти библиотеки. Их можно использовать вместе или по отдельности.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="frontend/shadow-virtual-dom/closed-root" options={['ShadowRoot', 'null', 'undefined', 'TypeError']} answer={1}>
+  Что выведет код?
+
+  ```js
+  const host = document.createElement('div');
+  const root = host.attachShadow({ mode: 'closed' });
+
+  console.log(host.shadowRoot);
+  ```
+
+  <Fragment slot="explanation">
+    Для закрытого корня `host.shadowRoot` возвращает `null`. Сам корень есть в переменной `root` —
+    `attachShadow` возвращает его в обоих режимах.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/shadow-virtual-dom/inherit"
+  options={['Синий и жирный', 'Синий, но не жирный', 'Жирный, но не синий', 'Ни синий, ни жирный']}
+  answer={1}
+>
+  Стили страницы — ниже. Каким будет абзац `p`, который находится **внутри** shadow DOM элемента `my-box` и не имеет своих стилей?
+
+  ```css
+  my-box { color: blue; }
+  p { font-weight: bold; }
+  ```
+
+  <Fragment slot="explanation">
+    `color` — наследуемое свойство, а наследование проходит через границу shadow DOM: абзац будет синим.
+    Селектор `p` со страницы не находит элементы внутри теневого дерева, поэтому жирным абзац не станет.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/shadow-virtual-dom/retarget"
+  options={['button внутри shadow DOM', 'user-card', 'shadowRoot', 'document']}
+  answer={1}
+>
+  Пользователь кликнул по кнопке внутри открытого shadow DOM элемента `user-card`. Что будет в `event.target`?
+
+  ```js
+  document.addEventListener('click', (event) => {
+    console.log(event.target);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    Снаружи событие перенацеливается (retargeting) на хост — `user-card`. Настоящий источник виден
+    через `event.composedPath()[0]`, и то лишь для открытого корня.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/shadow-virtual-dom/theming"
+  options={[
+    'user-card .title { color: red; }',
+    'user-card h3 { color: red; }',
+    'user-card { --title-color: red; }',
+    '.title { color: red !important; }',
+  ]}
+  answer={2}
+>
+  Внутри компонента заголовок стилизован как `color: var(--title-color, black)`. Какое правило на странице сделает его красным?
+
+  <Fragment slot="explanation">
+    CSS-переменные наследуются и проходят внутрь теневого дерева. Селекторы `.title` и `h3` снаружи
+    внутренние элементы не находят — даже с `!important`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/shadow-virtual-dom/index-key"
+  options={[
+    'У «Позвонить маме»',
+    'Ни у кого — галочка удалится вместе с элементом',
+    'У последнего элемента',
+    'React бросит ошибку',
+  ]}
+  answer={0}
+>
+  Список: «Купить молоко», «Позвонить маме». Галочку поставили у первого, затем первый элемент удалили. У кого будет галочка?
+
+  ```jsx
+  {todos.map((todo, index) => (
+    <li key={index}>
+      <input type="checkbox" /> {todo.text}
+    </li>
+  ))}
+  ```
+
+  <Fragment slot="explanation">
+    После удаления «Позвонить маме» получает индекс, а значит и ключ `0`. React переиспользует DOM-узел с ключом `0`
+    вместе с отмеченным `input` и меняет только текст. С `key={todo.id}` такого не случится.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="frontend/shadow-virtual-dom/diff-count" options={['1', '2', '3', '4']} answer={2}>
+  Сколько патчей вернёт `diff` из урока (сравнение детей по позиции, без ключей)?
+
+  ```js
+  const a = h('ul', null, h('li', null, 'Б'), h('li', null, 'В'));
+  const b = h('ul', null, h('li', null, 'А'), h('li', null, 'Б'), h('li', null, 'В'));
+
+  diff(a, b).length;
+  ```
+
+  <Fragment slot="explanation">
+    По позиции: в `li` 0 текст «Б» → «А», в `li` 1 — «В» → «Б», и `li` 2 создаётся. Итого три операции вместо одной
+    вставки. Ключи позволили бы понять, что «Б» и «В» просто сдвинулись.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="frontend/shadow-virtual-dom/vdom-speed"
+  options={[
+    'Да, VDOM всегда быстрее прямой работы с DOM',
+    'Нет: diff — дополнительная работа, точечное прямое изменение не медленнее; VDOM даёт удобство декларативного UI',
+    'Да, потому что VDOM рисуется на GPU',
+    'Нет, VDOM всегда медленнее, поэтому от него отказались',
+  ]}
+  answer={1}
+>
+  Верно ли, что Virtual DOM быстрее, чем точечные изменения настоящего DOM?
+
+  <Fragment slot="explanation">
+    VDOM добавляет шаги: построить дерево и сравнить его со старым. Хорошо нацеленное прямое изменение DOM
+    не медленнее — так работают Svelte и Solid. VDOM ценен тем, что позволяет описывать UI декларативно
+    и при этом не перерисовывать всё подряд.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Функция h с ключами" level="easy">
+  Напишите `h(type, props, ...children)`, которая возвращает vnode вида `{ type, key, props, children }`:
+
+  - `key` вынимается из `props` (по умолчанию `null`) и в `props` не остаётся;
+  - вложенные массивы детей разворачиваются на любую глубину;
+  - `null`, `undefined`, `true` и `false` выбрасываются;
+  - числа превращаются в строки.
+
+  ```js
+  const items = ['Молоко', 'Хлеб'];
+
+  h('ul', { class: 'list' },
+    items.map((text, i) => h('li', { key: text }, i + 1, '. ', text)),
+    false && h('li', null, 'скрыто'),
+  );
+  // {
+  //   type: 'ul', key: null, props: { class: 'list' },
+  //   children: [
+  //     { type: 'li', key: 'Молоко', props: {}, children: ['1', '. ', 'Молоко'] },
+  //     { type: 'li', key: 'Хлеб', props: {}, children: ['2', '. ', 'Хлеб'] },
+  //   ],
+  // }
+  ```
+
+  <Fragment slot="hint">
+    Деструктуризация с остатком: `const { key = null, ...rest } = props ?? {}`. Для глубины — `flat(Infinity)`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function h(type, props, ...children) {
+      const { key = null, ...rest } = props ?? {};
+      return {
+        type,
+        key,
+        props: rest,
+        children: children
+          .flat(Infinity)
+          .filter((child) => child != null && typeof child !== 'boolean')
+          .map((child) => (typeof child === 'object' ? child : String(child))),
+      };
+    }
+    ```
+
+    `false && …` в JSX-стиле даёт `false`, поэтому булевы значения выбрасываются. Число `0` остаётся
+    и превращается в `'0'` — так же поступает React.
+  </Fragment>
+</Task>
+
+<Task title="Почините список" level="easy">
+  В списке можно удалять задачи и сортировать их по названию. После удаления текст в полях ввода «переезжает»
+  к соседним задачам. Найдите причину и исправьте.
+
+  ```jsx
+  function TodoList({ todos, onRemove }) {
+    return (
+      <ul>
+        {todos.map((todo, index) => (
+          <li key={index}>
+            {todo.title}
+            <input placeholder="Заметка" />
+            <button onClick={() => onRemove(todo.id)}>×</button>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  ```
+
+  <Fragment slot="solution">
+    ```jsx
+    {todos.map((todo) => (
+      <li key={todo.id}>
+        {todo.title}
+        <input placeholder="Заметка" />
+        <button onClick={() => onRemove(todo.id)}>×</button>
+      </li>
+    ))}
+    ```
+
+    С `key={index}` после удаления или сортировки на тех же индексах оказываются другие задачи, и React
+    переиспользует старые `li` вместе с их `input` — введённый текст остаётся на месте, а названия меняются.
+    Стабильный `todo.id` привязывает DOM-узел и его состояние к конкретной задаче.
+  </Fragment>
+</Task>
+
+<Task title="Компонент toggle-switch" level="medium">
+  Сделайте custom element `toggle-switch`:
+
+  - теневое дерево с «дорожкой» и «ползунком»; подпись передаётся через слот по умолчанию;
+  - атрибут `checked` включает переключатель, свойство `checked` синхронизировано с атрибутом;
+  - клик, а также пробел или Enter при фокусе переключают состояние и отправляют событие `change`, которое всплывает;
+  - доступность: `role="switch"`, `tabindex="0"`, `aria-checked`;
+  - снаружи можно стилизовать дорожку через `::part(track)`, а цвета задать переменными `--toggle-on` и `--toggle-off`.
+
+  ```html
+  <toggle-switch checked>Тёмная тема</toggle-switch>
+  ```
+
+  <Fragment slot="hint">
+    Состояние храните в атрибуте, а внешний вид пусть зависит от `:host([checked])`. Слушатели на самом хосте
+    вешайте в конструкторе — они не держат ничего снаружи, удалять их не нужно.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    class ToggleSwitch extends HTMLElement {
+      static observedAttributes = ['checked'];
+
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML = `
+          <style>
+            :host { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+            .track { position: relative; width: 40px; height: 22px; border-radius: 11px;
+                     background: var(--toggle-off, #ccc); transition: background 0.2s; }
+            .thumb { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+                     border-radius: 50%; background: white; transition: transform 0.2s; }
+            :host([checked]) .track { background: var(--toggle-on, #4caf50); }
+            :host([checked]) .thumb { transform: translateX(18px); }
+          </style>
+          <span class="track" part="track"><span class="thumb" part="thumb"></span></span>
+          <slot></slot>
+        `;
+
+        this.addEventListener('click', () => this.toggle());
+        this.addEventListener('keydown', (event) => {
+          if (event.key === ' ' || event.key === 'Enter') {
+            event.preventDefault(); // пробел не должен прокручивать страницу
+            this.toggle();
+          }
+        });
+      }
+
+      connectedCallback() {
+        if (!this.hasAttribute('role')) this.setAttribute('role', 'switch');
+        if (!this.hasAttribute('tabindex')) this.setAttribute('tabindex', '0');
+        this.setAttribute('aria-checked', String(this.checked));
+      }
+
+      attributeChangedCallback() {
+        this.setAttribute('aria-checked', String(this.checked));
+      }
+
+      get checked() {
+        return this.hasAttribute('checked');
+      }
+
+      set checked(value) {
+        this.toggleAttribute('checked', Boolean(value));
+      }
+
+      toggle() {
+        this.checked = !this.checked;
+        this.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+
+    customElements.define('toggle-switch', ToggleSwitch);
+    ```
+
+    Атрибуты на самом хосте выставляются в `connectedCallback`, а не в конструкторе: конструктору нельзя
+    добавлять элементу атрибуты. Событие отправляется с хоста, поэтому `composed` не нужен.
+  </Fragment>
+</Task>
+
+<Task title="Темизация user-card" level="medium">
+  На странице подключён `user-card` из урока. Дизайнер просит: акцентный цвет — `#e91e63`, шрифт карточки — `Inter`,
+  имя — заглавными буквами, кнопка — со скруглением 999px и тёмным фоном при наведении. Коллега написал CSS, но он
+  почти не работает. Объясните почему и перепишите.
+
+  ```css
+  user-card .name {
+    color: #e91e63;
+    text-transform: uppercase;
+  }
+  user-card button {
+    border-radius: 999px;
+  }
+  user-card button:hover {
+    background: #222;
+  }
+  user-card {
+    font-family: Inter, sans-serif;
+  }
+  ```
+
+  <Fragment slot="solution">
+    ```css
+    user-card {
+      --card-accent: #e91e63; /* цвет имени и рамки берётся из переменной */
+      font-family: Inter, sans-serif; /* наследуется внутрь */
+    }
+    user-card::part(name) {
+      text-transform: uppercase;
+    }
+    user-card::part(button) {
+      border-radius: 999px;
+    }
+    user-card::part(button):hover {
+      background: #222;
+      color: white;
+    }
+    ```
+
+    Селекторы `user-card .name` и `user-card button` ищут потомков в обычном DOM, а эти элементы лежат
+    в теневом дереве — туда селекторы страницы не проходят. Работало только правило с `font-family`:
+    оно применяется к самому хосту и наследуется. Компонент даёт два канала: переменную `--card-accent`
+    и части `name` и `button`.
+  </Fragment>
+</Task>
+
+<Task title="Diff списка с ключами" level="hard">
+  Напишите `diffKeyed(oldList, newList)` для двух массивов vnode с уникальными `key` (как из первой задачи).
+  Функция возвращает патчи-данные:
+
+  - `{ type: 'REMOVE', key }` — ключа нет в новом списке;
+  - `{ type: 'INSERT', key, index, node }` — новый ключ;
+  - `{ type: 'MOVE', key, index }` — ключ есть, но стоит не на своём месте;
+  - `{ type: 'UPDATE', key, node }` — ключ на месте, но содержимое изменилось.
+
+  Патчи применяются по порядку к массиву функцией ниже, и результат должен совпасть с `newList`.
+  Добавление в начало должно давать **один** патч.
+
+  ```js
+  function applyKeyed(list, patches) {
+    const result = [...list];
+    for (const p of patches) {
+      const at = result.findIndex((node) => node.key === p.key);
+      if (p.type === 'REMOVE') result.splice(at, 1);
+      if (p.type === 'INSERT') result.splice(p.index, 0, p.node);
+      if (p.type === 'MOVE') result.splice(p.index, 0, ...result.splice(at, 1));
+      if (p.type === 'UPDATE') result[at] = p.node;
+    }
+    return result;
+  }
+
+  const li = (key, text = key) => h('li', { key }, text);
+
+  diffKeyed([li('б'), li('в')], [li('а'), li('б'), li('в')]);
+  // [{ type: 'INSERT', key: 'а', index: 0, node: li('а') }]
+
+  diffKeyed([li('a'), li('b'), li('c')], [li('c'), li('a', 'A!')]);
+  // [REMOVE b, MOVE c → 0, UPDATE a]
+  ```
+
+  <Fragment slot="hint">
+    Сначала удалите исчезнувшие ключи и запомните текущий порядок оставшихся в массиве `current`.
+    Затем идите по новому списку: если на позиции `index` в `current` не тот ключ — вставьте или передвиньте,
+    обновляя `current` так же, как это сделает `applyKeyed`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    function diffKeyed(oldList, newList) {
+      const patches = [];
+      const newKeys = new Set(newList.map((node) => node.key));
+      const oldByKey = new Map(oldList.map((node) => [node.key, node]));
+
+      // 1. удаляем то, чего нет в новом списке
+      const current = [];
+      for (const node of oldList) {
+        if (newKeys.has(node.key)) current.push(node.key);
+        else patches.push({ type: 'REMOVE', key: node.key });
+      }
+
+      // 2. идём по новому списку и ставим каждый ключ на своё место
+      newList.forEach((node, index) => {
+        const old = oldByKey.get(node.key);
+        if (!old) {
+          patches.push({ type: 'INSERT', key: node.key, index, node });
+          current.splice(index, 0, node.key);
+          return;
+        }
+        if (current[index] !== node.key) {
+          patches.push({ type: 'MOVE', key: node.key, index });
+          current.splice(current.indexOf(node.key), 1);
+          current.splice(index, 0, node.key);
+        }
+        // для учебной версии сравниваем содержимое целиком; в жизни здесь был бы рекурсивный diff
+        if (JSON.stringify(old) !== JSON.stringify(node)) {
+          patches.push({ type: 'UPDATE', key: node.key, node });
+        }
+      });
+      return patches;
+    }
+    ```
+
+    Позиции слева от `index` к моменту его обработки уже совпадают с новым списком, поэтому
+    после прохода `current` равен порядку ключей `newList`. При добавлении в начало «б» и «в» сдвигаются
+    вставкой сами и патчей не получают.
+
+    Этот алгоритм не минимален по числу `MOVE`: если последний элемент перенести в начало, получится
+    один `MOVE`, а если первый в конец — по `MOVE` на каждый из остальных. Настоящие библиотеки
+    дополнительно ищут наибольшую возрастающую подпоследовательность старых позиций, чтобы двигать
+    как можно меньше узлов.
+  </Fragment>
+</Task>

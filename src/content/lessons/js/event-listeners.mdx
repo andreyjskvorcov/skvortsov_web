@@ -1,0 +1,986 @@
+---
+title: 'Обработчики событий: addEventListener'
+description: Три способа повесить обработчик, объект события, target и currentTarget, всплытие и погружение, опции once/passive/capture/signal, делегирование, CustomEvent и типичные ошибки
+section: js
+order: 25
+level: middle
+tags: [events, addEventListener, dom, delegation, CustomEvent]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+**Событие** — сигнал о том, что что-то произошло: клик, нажатие клавиши, отправка формы, конец загрузки.
+**Обработчик** — функция, которую браузер вызовет, когда событие случится. Обработчик — это обычный
+[колбэк](/learn/js/callbacks): вы передаёте функцию, а вызывает её браузер.
+
+```js
+const button = document.querySelector('#buy');
+
+button.addEventListener('click', () => {
+  console.log('Купили!');
+});
+```
+
+## 1. Три способа повесить обработчик
+
+### HTML-атрибут
+
+```html
+<button onclick="alert('Привет')">Нажми</button>
+```
+
+Строка из атрибута превращается в функцию. Внутри доступны `this` (сам элемент) и `event`.
+Так писали в 2000-х, и так до сих пор пишут в учебных примерах — но в реальном коде это плохая идея:
+JS перемешан с разметкой, функции должны быть глобальными, а строгая политика безопасности (CSP) такие атрибуты
+вообще блокирует.
+
+### DOM-свойство `on<событие>`
+
+```js
+button.onclick = function () {
+  console.log('Первый');
+};
+
+button.onclick = function () {
+  console.log('Второй');
+};
+
+// При клике: 'Второй' — первый обработчик перезаписан
+button.onclick = null; // снять обработчик
+```
+
+Свойство — это просто поле объекта, в нём помещается **одна** функция. Новое присваивание затирает старое,
+в том числе обработчик из HTML-атрибута.
+
+### `addEventListener`
+
+```js
+function first() {
+  console.log('Первый');
+}
+
+function second() {
+  console.log('Второй');
+}
+
+button.addEventListener('click', first);
+button.addEventListener('click', second);
+
+// При клике: 'Первый', 'Второй' — работают оба, в порядке добавления
+button.removeEventListener('click', first); // теперь только 'Второй'
+```
+
+Сигнатура: `target.addEventListener(type, listener, options)`. Имя события пишется **без** `on`: `'click'`, а не `'onclick'`.
+
+| | `onclick="…"` | `el.onclick = fn` | `addEventListener` |
+|---|---|---|---|
+| Несколько обработчиков на одно событие | нет | нет, последний затирает | да |
+| Как снять | убрать атрибут | `el.onclick = null` | `removeEventListener` с той же функцией |
+| Опции (`once`, `passive`, `capture`, `signal`) | нет | нет | да |
+| Фаза погружения | нет | нет | да, `capture: true` |
+| Где живёт код | в HTML | в JS | в JS |
+
+<Callout type="tip">
+  По умолчанию используйте `addEventListener`. Он не мешает чужому коду (ваш обработчик не затрёт чужой)
+  и умеет всё, что умеют остальные способы.
+</Callout>
+
+Одна тонкость: `return false` в обработчике-свойстве (`el.onclick = () => false`) отменяет действие браузера
+по умолчанию. В `addEventListener` возвращаемое значение игнорируется — там нужен `event.preventDefault()`.
+
+## 2. Объект события
+
+Обработчик получает первым аргументом объект события. В нём всё, что известно о произошедшем:
+
+```js
+document.addEventListener('keydown', (event) => {
+  console.log(event.type); // 'keydown'
+  console.log(event.key); // 'Enter', 'a', 'Escape'…
+  console.log(event.ctrlKey); // true, если зажат Ctrl
+});
+
+button.addEventListener('click', (event) => {
+  console.log(event.clientX, event.clientY); // координаты курсора в окне
+});
+```
+
+| Свойство / метод | Что это |
+|---|---|
+| `type` | имя события: `'click'`, `'submit'`… |
+| `target` | элемент, на котором событие **произошло** |
+| `currentTarget` | элемент, на котором **сработал этот обработчик** |
+| `eventPhase` | фаза: 1 — погружение, 2 — на цели, 3 — всплытие |
+| `preventDefault()` | отменить действие браузера по умолчанию |
+| `defaultPrevented` | `true`, если действие уже отменили |
+| `stopPropagation()` | остановить движение события по дереву |
+| `bubbles`, `cancelable` | всплывает ли событие и можно ли его отменить |
+
+### target и currentTarget
+
+```html
+<ul id="menu">
+  <li>Главная</li>
+  <li>Контакты</li>
+</ul>
+```
+
+```js
+const menu = document.querySelector('#menu');
+
+menu.addEventListener('click', (event) => {
+  console.log(event.target); // <li>Контакты</li> — куда кликнули
+  console.log(event.currentTarget); // <ul id="menu"> — где висит обработчик
+});
+```
+
+`target` — самый глубокий элемент под курсором, он может оказаться иконкой внутри кнопки или `<span>` внутри `<li>`.
+`currentTarget` всегда равен элементу, к которому привязан обработчик.
+
+<Callout type="warning">
+  `currentTarget` существует только пока событие обрабатывается. Если сохранить `event` и посмотреть позже
+  (в `setTimeout`, после `await`), там будет `null`. Нужен элемент — сохраните его в переменную сразу.
+</Callout>
+
+## 3. removeEventListener: нужна та же самая функция
+
+Снять обработчик можно только передав **ту же ссылку** на функцию, тот же тип события и то же значение `capture`.
+
+```js
+// ✗ Две разные функции — снять нечего
+button.addEventListener('click', () => console.log('клик'));
+button.removeEventListener('click', () => console.log('клик')); // ничего не произошло
+
+// ✗ bind каждый раз создаёт новую функцию
+button.addEventListener('click', counter.inc.bind(counter));
+button.removeEventListener('click', counter.inc.bind(counter)); // тоже мимо
+
+// ✓ Сохранили ссылку — сняли
+const onClick = () => console.log('клик');
+button.addEventListener('click', onClick);
+button.removeEventListener('click', onClick);
+
+// ✓ То же для bind
+const inc = counter.inc.bind(counter);
+button.addEventListener('click', inc);
+button.removeEventListener('click', inc);
+```
+
+Две стрелки с одинаковым кодом — это два разных объекта, как два одинаковых `{}` не равны друг другу
+(см. [сравнение типов](/learn/js/types-comparison)).
+
+`capture` тоже входит в «ключ» обработчика:
+
+```js
+button.addEventListener('click', onClick, { capture: true });
+button.removeEventListener('click', onClick); // ✗ не снимет: capture по умолчанию false
+button.removeEventListener('click', onClick, { capture: true }); // ✓
+```
+
+А вот одну и ту же функцию с теми же `type` и `capture` дважды добавить нельзя — второй вызов игнорируется:
+
+```js
+button.addEventListener('click', onClick);
+button.addEventListener('click', onClick);
+// При клике onClick вызовется один раз
+```
+
+## 4. Опции: once, passive, capture, signal
+
+Третий аргумент — объект опций (или просто `true`/`false`, что означает `capture`).
+
+```js
+// once — обработчик сработает один раз и снимется сам
+button.addEventListener('click', () => console.log('Только первый клик'), { once: true });
+
+// capture — ловить событие на фазе погружения (см. следующий раздел)
+form.addEventListener('focus', onFocus, { capture: true });
+
+// passive — обещание не вызывать preventDefault
+window.addEventListener('scroll', onScroll, { passive: true });
+
+// signal — снять обработчик через AbortController
+const controller = new AbortController();
+window.addEventListener('resize', onResize, { signal: controller.signal });
+window.addEventListener('keydown', onKeydown, { signal: controller.signal });
+
+controller.abort(); // сняты оба обработчика разом
+```
+
+| Опция | По умолчанию | Что делает |
+|---|---|---|
+| `once` | `false` | снимает обработчик после первого вызова |
+| `capture` | `false` | вызывает обработчик на фазе погружения |
+| `passive` | `false`* | `preventDefault()` внутри игнорируется |
+| `signal` | — | обработчик снимается при `abort()` этого сигнала |
+
+\* Для `touchstart`, `touchmove`, `wheel` и `mousewheel` на `window`, `document`, `<html>` и `<body>`
+браузеры по умолчанию считают обработчик пассивным.
+
+`signal` особенно удобен, когда обработчиков много: не нужно хранить ссылки на каждую функцию,
+и можно использовать анонимные стрелки. Подробно — в уроке [AbortController](/learn/js/abort-controller).
+
+### Зачем passive
+
+Для `wheel` и `touchmove` браузер, прежде чем прокрутить страницу, должен дождаться вашего обработчика —
+вдруг вы вызовете `preventDefault()` и прокрутку отмените. Тяжёлый обработчик делает прокрутку дёрганой.
+`passive: true` говорит: «отменять не буду, крути сразу».
+
+```js
+// ✗ preventDefault в пассивном обработчике не сработает — браузер только напишет предупреждение в консоль
+window.addEventListener('wheel', (event) => event.preventDefault(), { passive: true });
+
+// ✓ Хотите отменить прокрутку — явно passive: false
+canvas.addEventListener('wheel', (event) => {
+  event.preventDefault();
+  zoom(event.deltaY);
+}, { passive: false });
+```
+
+## 5. Всплытие и погружение
+
+Событие, случившееся на элементе, не остаётся на нём. Оно проходит путь по дереву в три фазы:
+
+1. **Погружение** (capture) — от `window` вниз к цели;
+2. **Цель** (target) — на самом элементе;
+3. **Всплытие** (bubble) — от цели обратно вверх до `window`.
+
+```html
+<div id="card">
+  <button id="buy"><span id="icon">🛒</span> Купить</button>
+</div>
+```
+
+```js
+card.addEventListener('click', () => console.log('card: погружение'), { capture: true });
+card.addEventListener('click', () => console.log('card: всплытие'));
+buy.addEventListener('click', () => console.log('button'));
+document.addEventListener('click', () => console.log('document'));
+
+// Клик по иконке:
+// 'card: погружение'
+// 'button'
+// 'card: всплытие'
+// 'document'
+```
+
+Обработчики без `capture` (а это почти все) срабатывают при всплытии. Поэтому клик по иконке «долетает»
+до кнопки, карточки и документа.
+
+<Callout type="info">
+  Всплывают не все события. Например, `focus` и `blur` не всплывают (их всплывающие версии — `focusin` и `focusout`),
+  `mouseenter` и `mouseleave` тоже. Проверить можно по `event.bubbles`.
+</Callout>
+
+### stopPropagation и stopImmediatePropagation
+
+```js
+buy.addEventListener('click', (event) => {
+  event.stopPropagation(); // дальше по дереву событие не пойдёт
+  console.log('button 1');
+});
+buy.addEventListener('click', () => console.log('button 2'));
+card.addEventListener('click', () => console.log('card'));
+
+// Клик: 'button 1', 'button 2' — card не узнает о клике
+```
+
+```js
+buy.addEventListener('click', (event) => {
+  event.stopImmediatePropagation(); // стоп и по дереву, и по остальным обработчикам этого элемента
+  console.log('button 1');
+});
+buy.addEventListener('click', () => console.log('button 2'));
+card.addEventListener('click', () => console.log('card'));
+
+// Клик: 'button 1' — и всё
+```
+
+| | Другие обработчики этого элемента | Обработчики выше/ниже по дереву |
+|---|---|---|
+| `stopPropagation()` | сработают | не сработают |
+| `stopImmediatePropagation()` | не сработают | не сработают |
+
+<Callout type="warning">
+  Не глушите всплытие «на всякий случай». Аналитика, закрытие меню по клику снаружи, делегирование — всё
+  это слушает `document` и сломается молча. Обычно вместо `stopPropagation` достаточно проверить `event.target`.
+</Callout>
+
+### preventDefault: отмена действия браузера
+
+Всплытие и действие по умолчанию — разные вещи. `stopPropagation` не мешает ссылке открыться,
+а `preventDefault` не мешает событию всплыть.
+
+```js
+// Форма: не перезагружать страницу, отправить данные самим
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const data = new FormData(form);
+  fetch('/api/order', { method: 'POST', body: data });
+});
+
+// Ссылка: не переходить, открыть модалку
+link.addEventListener('click', (event) => {
+  event.preventDefault();
+  openModal(link.href);
+});
+```
+
+Слушайте `submit` на форме, а не `click` на кнопке: форму можно отправить и клавишей Enter в поле ввода.
+
+## 6. Делегирование событий
+
+Сто кнопок «Удалить» — не повод вешать сто обработчиков. Благодаря всплытию достаточно одного на общем родителе:
+
+```html
+<ul id="todo">
+  <li data-id="1">Купить хлеб <button class="delete">✕</button></li>
+  <li data-id="2">Позвонить маме <button class="delete">✕</button></li>
+</ul>
+```
+
+```js
+const todo = document.querySelector('#todo');
+
+todo.addEventListener('click', (event) => {
+  const button = event.target.closest('.delete');
+  if (!button) return; // кликнули не по кнопке
+
+  const item = button.closest('li');
+  console.log('Удаляем', item.dataset.id);
+  item.remove();
+});
+```
+
+`closest(selector)` поднимается от элемента вверх (начиная с него самого) и возвращает первого предка,
+подходящего под селектор, или `null`. Это решает проблему вложенности: если в кнопке есть иконка,
+`event.target` будет иконкой, а `closest('.delete')` всё равно найдёт кнопку.
+
+Плюсы делегирования:
+
+- **один обработчик** вместо сотни — меньше памяти, проще снять;
+- **работает для новых элементов**: добавили `<li>` через `append` — кнопка в нём уже «живая»;
+- **не нужно ничего чистить** при удалении отдельных элементов.
+
+<Callout type="tip">
+  Если внутри списка может оказаться вложенный такой же список, добавьте проверку
+  `todo.contains(button)` — чтобы `closest` не нашёл элемент снаружи контейнера.
+</Callout>
+
+## 7. this в обработчике
+
+В обработчике-**функции** `this` — это `currentTarget`, элемент с обработчиком. У **стрелки** своего `this` нет,
+она берёт его снаружи (подробнее — в уроке [this](/learn/js/this)).
+
+```js
+button.addEventListener('click', function () {
+  this.classList.toggle('active'); // ✓ this — button
+});
+
+button.addEventListener('click', () => {
+  this.classList.toggle('active'); // ✗ this — внешний (в модуле undefined) → TypeError
+});
+
+button.addEventListener('click', (event) => {
+  event.currentTarget.classList.toggle('active'); // ✓ без this — работает везде
+});
+```
+
+В классах ситуация обратная: метод, переданный как обработчик, теряет объект — `this` станет элементом.
+
+```js
+class Counter {
+  count = 0;
+
+  constructor(button) {
+    button.addEventListener('click', this.inc); // ✗ внутри inc this — button, а не Counter
+    button.addEventListener('click', this.incArrow); // ✓ стрелочное поле
+  }
+
+  inc() {
+    this.count++;
+  }
+
+  incArrow = () => {
+    this.count++;
+  };
+}
+```
+
+Совет: читайте элемент из `event.currentTarget`, а `this` оставьте для объекта, которому принадлежит логика.
+
+## 8. Свои события: CustomEvent и dispatchEvent
+
+Событие можно создать и запустить самому. Так компоненты общаются, не зная друг о друге:
+
+```js
+// Карточка товара сообщает: «добавили в корзину»
+buyButton.addEventListener('click', () => {
+  const event = new CustomEvent('cart:add', {
+    detail: { id: 42, price: 1990 }, // любые данные
+    bubbles: true, // по умолчанию false!
+  });
+  buyButton.dispatchEvent(event);
+});
+
+// Шапка с корзиной слушает document и ничего не знает о карточке
+document.addEventListener('cart:add', (event) => {
+  console.log(event.detail); // { id: 42, price: 1990 }
+});
+```
+
+Без `bubbles: true` событие останется на `buyButton`, и `document` его не услышит.
+
+| Параметр | По умолчанию | Зачем |
+|---|---|---|
+| `detail` | `null` | данные для обработчиков |
+| `bubbles` | `false` | всплывать ли по дереву |
+| `cancelable` | `false` | можно ли вызвать `preventDefault()` |
+
+`dispatchEvent` вызывает обработчики **синхронно**, прямо внутри себя, и возвращает `false`, если событие было
+`cancelable` и кто-то вызвал `preventDefault()`. Так можно спросить разрешения:
+
+```js
+const allowed = panel.dispatchEvent(new CustomEvent('panel:close', { cancelable: true }));
+
+if (allowed) {
+  panel.hidden = true; // никто не возразил
+}
+```
+
+`EventTarget` — обычный класс, его можно расширить для своих объектов без всякого DOM:
+
+```js
+class Store extends EventTarget {
+  #state = 0;
+
+  increment() {
+    this.#state++;
+    this.dispatchEvent(new CustomEvent('change', { detail: this.#state }));
+  }
+}
+
+const store = new Store();
+store.addEventListener('change', (event) => console.log(event.detail));
+store.increment(); // 1
+store.increment(); // 2
+```
+
+Это основа простого [стейт-менеджера](/learn/architecture/state-manager).
+
+## 9. Утечки памяти и очистка
+
+Сам по себе обработчик на удалённом элементе не страшен: если на элемент больше никто не ссылается,
+сборщик мусора уберёт его вместе с обработчиками. Проблемы начинаются, когда обработчик висит на
+**долгоживущем** объекте — `window`, `document`, глобальном сторе — и через [замыкание](/learn/js/closures)
+держит то, что уже не нужно.
+
+```js
+// ✗ Модалку закрыли и удалили, а обработчик на window остался.
+// Он держит modal в замыкании и срабатывает на каждый Escape
+function openModal() {
+  const modal = createModal();
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') modal.remove();
+  });
+}
+
+// ✓ Подписка и отписка в паре
+function openModal() {
+  const modal = createModal();
+  const controller = new AbortController();
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') close();
+  }, { signal: controller.signal });
+
+  function close() {
+    modal.remove();
+    controller.abort(); // все подписки модалки сняты
+  }
+}
+```
+
+Каждый раз, когда пишете `addEventListener` на `window`/`document`, задайте себе вопрос: «где я это сниму?»
+В React это функция очистки в `useEffect`, во Vue — `onUnmounted`, в веб-компонентах — `disconnectedCallback`.
+
+## Как не надо
+
+### Инлайн-обработчики в HTML
+
+```html
+<!-- ✗ Логика в разметке, функция обязана быть глобальной, блокируется CSP -->
+<button onclick="addToCart(42)">Купить</button>
+
+<!-- ✓ Разметка — данные, логика — в JS -->
+<button class="buy" data-id="42">Купить</button>
+```
+
+```js
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('.buy');
+  if (button) addToCart(Number(button.dataset.id));
+});
+```
+
+### Вызвать функцию вместо передачи
+
+```js
+// ✗ handler() вызывается сразу, в addEventListener уходит её результат — undefined
+button.addEventListener('click', handler());
+
+// ✓ Передаём саму функцию
+button.addEventListener('click', handler);
+
+// ✓ Нужны аргументы — оборачиваем
+button.addEventListener('click', () => handler(42));
+```
+
+### Обработчик, который не снять
+
+```js
+// ✗ Анонимная функция — ссылки нет, removeEventListener бессилен
+window.addEventListener('scroll', () => updateHeader());
+
+// ✓ Именованная функция или signal
+const onScroll = () => updateHeader();
+window.addEventListener('scroll', onScroll, { passive: true });
+// ...
+window.removeEventListener('scroll', onScroll);
+```
+
+### Обработчик на каждый элемент в цикле
+
+```js
+// ✗ 1000 строк — 1000 функций; новые строки остаются без обработчика
+document.querySelectorAll('.row').forEach((row) => {
+  row.addEventListener('click', () => select(row));
+});
+
+// ✓ Один обработчик на контейнере
+table.addEventListener('click', (event) => {
+  const row = event.target.closest('.row');
+  if (row) select(row);
+});
+```
+
+### Забыть про очистку
+
+```js
+// ✗ Каждый рендер компонента добавляет ещё один обработчик на window
+function render() {
+  window.addEventListener('resize', layout);
+  // ...
+}
+
+// ✓ Подписались при монтировании — отписались при удалении
+function mount() {
+  window.addEventListener('resize', layout);
+  return () => window.removeEventListener('resize', layout);
+}
+```
+
+Повторный `addEventListener` с **той же** функцией `layout` дубля не создаст. Но если внутри `render` каждый раз
+создаётся новая стрелка — обработчики будут копиться.
+
+### Стрелка там, где нужен this
+
+```js
+// ✗ this — не кнопка
+button.addEventListener('click', () => {
+  this.disabled = true;
+});
+
+// ✓ event.currentTarget (или обычная function)
+button.addEventListener('click', (event) => {
+  event.currentTarget.disabled = true;
+});
+```
+
+### target вместо currentTarget
+
+```js
+// ✗ Клик по <span> внутри кнопки — target это span, у него нет data-id
+button.addEventListener('click', (event) => {
+  console.log(event.target.dataset.id); // undefined
+});
+
+// ✓ currentTarget — элемент, на котором висит обработчик
+button.addEventListener('click', (event) => {
+  console.log(event.currentTarget.dataset.id); // '42'
+});
+```
+
+### return false вместо preventDefault
+
+```js
+// ✗ В addEventListener return false ничего не отменяет — форма отправится
+form.addEventListener('submit', () => {
+  validate();
+  return false;
+});
+
+// ✓
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+  validate();
+});
+```
+
+## Шпаргалка
+
+| Задача | Решение |
+|---|---|
+| Повесить обработчик | `el.addEventListener('click', fn)` |
+| Снять | `el.removeEventListener('click', fn)` — та же `fn` и тот же `capture` |
+| Один раз | `{ once: true }` |
+| Снять пачку разом | `{ signal: controller.signal }` + `controller.abort()` |
+| Не мешать прокрутке | `{ passive: true }` |
+| Ловить до цели | `{ capture: true }` |
+| Отменить действие браузера | `event.preventDefault()` |
+| Остановить всплытие | `event.stopPropagation()` |
+| Где кликнули | `event.target` |
+| Где висит обработчик | `event.currentTarget` |
+| Много однотипных элементов | делегирование + `event.target.closest(selector)` |
+| Своё событие | `el.dispatchEvent(new CustomEvent('name', { detail, bubbles: true }))` |
+
+## Проверь себя
+
+<Quiz client:visible id="js/event-listeners/call-instead-of-pass" options={['При каждом клике выводится «клик»', '«клик» выводится один раз сразу, клики ничего не делают', 'TypeError при вызове addEventListener', '«клик» выводится дважды при каждом клике']} answer={1}>
+  Что произойдёт?
+
+  ```js
+  function handler() {
+    console.log('клик');
+  }
+
+  button.addEventListener('click', handler());
+  ```
+
+  <Fragment slot="explanation">
+    `handler()` вызывается сразу, при выполнении строки, и выводит «клик». В `addEventListener` уходит результат
+    вызова — `undefined`. Ошибки не будет: такой вызов просто ничего не подписывает. Нужно передать `handler` без скобок.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-listeners/onclick-overwrite" options={["'A'", "'B'", "'A', 'B'", "'B', 'A'"]} answer={1}>
+  Что выведет клик по кнопке?
+
+  ```js
+  button.onclick = () => console.log('A');
+  button.onclick = () => console.log('B');
+  ```
+
+  <Fragment slot="explanation">
+    `onclick` — обычное свойство, в нём помещается одна функция. Второе присваивание заменяет первое.
+    С `addEventListener` сработали бы оба.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-listeners/remove-anonymous" options={['0', '1', '2', 'TypeError']} answer={1}>
+  Чему будет равен `count` после одного клика?
+
+  ```js
+  let count = 0;
+
+  button.addEventListener('click', () => count++);
+  button.removeEventListener('click', () => count++);
+
+  button.click();
+  ```
+
+  <Fragment slot="explanation">
+    Две стрелки — два разных объекта-функции, хоть код и одинаковый. `removeEventListener` ищет обработчик по ссылке,
+    не находит и молча ничего не делает. Обработчик остался, `count` станет `1`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-listeners/same-fn-twice" options={['0', '1', '2', 'TypeError']} answer={1}>
+  Сколько раз выведется «клик» при одном клике?
+
+  ```js
+  function onClick() {
+    console.log('клик');
+  }
+
+  button.addEventListener('click', onClick);
+  button.addEventListener('click', onClick);
+  ```
+
+  <Fragment slot="explanation">
+    Одна и та же функция с тем же типом события и тем же `capture` регистрируется только один раз — повторный
+    вызов игнорируется. Если бы второй раз передали `{ capture: true }`, это был бы уже отдельный обработчик.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-listeners/target-current" options={['li и li', 'ul и ul', 'li и ul', 'ul и li']} answer={2}>
+  Пользователь кликнул по пункту списка. Какие элементы окажутся в `target` и `currentTarget`?
+
+  ```js
+  // <ul id="menu"><li>Главная</li></ul>
+  menu.addEventListener('click', (event) => {
+    console.log(event.target.tagName, event.currentTarget.tagName);
+  });
+  ```
+
+  <Fragment slot="explanation">
+    `target` — где событие произошло: `LI`. `currentTarget` — где висит обработчик: `UL`.
+    Событие всплыло от `li` до `ul`, и обработчик на `ul` сработал.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-listeners/phases-order" options={['button, card-capture, card-bubble', 'card-capture, button, card-bubble', 'card-bubble, button, card-capture', 'button, card-bubble, card-capture']} answer={1}>
+  `button` лежит внутри `card`. В каком порядке выведутся сообщения при клике по кнопке?
+
+  ```js
+  card.addEventListener('click', () => console.log('card-bubble'));
+  card.addEventListener('click', () => console.log('card-capture'), { capture: true });
+  button.addEventListener('click', () => console.log('button'));
+  ```
+
+  <Fragment slot="explanation">
+    Событие сначала погружается от `window` к цели — срабатывает обработчик с `capture: true` на `card`.
+    Потом цель — `button`. Потом всплытие — обычный обработчик на `card`. Порядок добавления тут не важен:
+    фаза важнее.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-listeners/stop-immediate" options={["'1', '2', 'parent'", "'1', '2'", "'1'", "'1', 'parent'"]} answer={2}>
+  `child` лежит внутри `parent`. Что выведет клик по `child`?
+
+  ```js
+  child.addEventListener('click', (event) => {
+    console.log('1');
+    event.stopImmediatePropagation();
+  });
+  child.addEventListener('click', () => console.log('2'));
+  parent.addEventListener('click', () => console.log('parent'));
+  ```
+
+  <Fragment slot="explanation">
+    `stopImmediatePropagation` останавливает и всплытие, и остальные обработчики на этом же элементе.
+    С `stopPropagation` вывелось бы `'1'`, `'2'` — второй обработчик `child` сработал бы, а `parent` нет.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/event-listeners/custom-bubbles" options={['{ id: 1 }', 'null', 'Ничего — обработчик не сработает', 'TypeError']} answer={2}>
+  Что выведет код? `button` находится внутри `document`.
+
+  ```js
+  document.addEventListener('cart:add', (event) => {
+    console.log(event.detail);
+  });
+
+  button.dispatchEvent(new CustomEvent('cart:add', { detail: { id: 1 } }));
+  ```
+
+  <Fragment slot="explanation">
+    У `CustomEvent` по умолчанию `bubbles: false`. Событие сработает только на самой `button` и до `document`
+    не дойдёт. Нужно добавить `bubbles: true` в опции.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Почините счётчик" level="easy">
+  Счётчик должен увеличиваться при каждом клике, но число меняется один раз при загрузке страницы, а клики
+  ничего не делают. Найдите и исправьте ошибку.
+
+  ```js
+  const button = document.querySelector('#counter');
+  let count = 0;
+
+  function increment() {
+    count++;
+    button.textContent = count;
+  }
+
+  button.addEventListener('click', increment());
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    button.addEventListener('click', increment);
+    ```
+
+    Со скобками `increment()` вызывается сразу — отсюда «один раз при загрузке», — а в `addEventListener`
+    передаётся результат вызова, `undefined`. Без скобок передаётся сама функция, и браузер вызовет её при клике.
+  </Fragment>
+</Task>
+
+<Task title="Три клика и хватит" level="easy">
+  Кнопка считает клики и показывает число. После третьего клика обработчик должен сняться, а кнопка — стать
+  неактивной. Используйте `removeEventListener`.
+
+  ```html
+  <button id="vote">0</button>
+  ```
+
+  <Fragment slot="hint">
+    Чтобы снять обработчик, нужна ссылка на ту же функцию — объявите её с именем.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const button = document.querySelector('#vote');
+    let count = 0;
+
+    function onClick() {
+      count++;
+      button.textContent = count;
+
+      if (count === 3) {
+        button.removeEventListener('click', onClick);
+        button.disabled = true;
+      }
+    }
+
+    button.addEventListener('click', onClick);
+    ```
+
+    Именованная функция `onClick` — одна и та же ссылка в `addEventListener` и `removeEventListener`.
+    С анонимной стрелкой снять обработчик было бы нечем. Если бы нужен был ровно один клик, хватило бы `{ once: true }`.
+  </Fragment>
+</Task>
+
+<Task title="Список с удалением" level="medium">
+  Есть список задач. Перепишите код так, чтобы был **один** обработчик на весь список, и кнопки «✕» работали
+  в том числе у задач, добавленных позже.
+
+  ```html
+  <ul id="todo">
+    <li data-id="1">Купить хлеб <button class="delete"><span class="icon">✕</span></button></li>
+    <li data-id="2">Позвонить маме <button class="delete"><span class="icon">✕</span></button></li>
+  </ul>
+  ```
+
+  ```js
+  document.querySelectorAll('.delete').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.target.parentElement.remove();
+    });
+  });
+  ```
+
+  Подсказка к багу: что окажется в `event.target`, если кликнуть точно по иконке?
+
+  <Fragment slot="solution">
+    ```js
+    const todo = document.querySelector('#todo');
+
+    todo.addEventListener('click', (event) => {
+      const button = event.target.closest('.delete');
+      if (!button) return;
+
+      button.closest('li').remove();
+    });
+    ```
+
+    В исходном коде два бага. Первый — обработчики висят только на кнопках, которые были на момент запуска, новые
+    задачи остаются без них. Второй — при клике по иконке `event.target` это `span`, его `parentElement` — кнопка,
+    и удаляется кнопка, а не `li`.
+
+    Делегирование решает оба: обработчик один на `ul`, событие всплывает к нему от любой кнопки, в том числе новой.
+    `closest('.delete')` находит кнопку, даже если кликнули по иконке, а `closest('li')` — задачу.
+  </Fragment>
+</Task>
+
+<Task title="Меню с закрытием снаружи" level="medium">
+  По клику на кнопку меню открывается. Закрываться оно должно по клику в любом месте **вне** меню и по Escape.
+  Пока меню закрыто, обработчиков на `document` быть не должно.
+
+  ```html
+  <div id="menu">
+    <button id="toggle">Меню</button>
+    <div id="panel" hidden>...</div>
+  </div>
+  ```
+
+  <Fragment slot="hint">
+    Вешайте обработчики на `document` при открытии с одним `signal`, а при закрытии вызывайте `abort()`.
+    Проверка «клик вне меню» — `menu.contains(event.target)`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    const menu = document.querySelector('#menu');
+    const toggle = document.querySelector('#toggle');
+    const panel = document.querySelector('#panel');
+    let controller = null;
+
+    function open() {
+      panel.hidden = false;
+      controller = new AbortController();
+      const { signal } = controller;
+
+      document.addEventListener('click', (event) => {
+        if (!menu.contains(event.target)) close();
+      }, { signal });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') close();
+      }, { signal });
+    }
+
+    function close() {
+      panel.hidden = true;
+      controller?.abort();
+      controller = null;
+    }
+
+    toggle.addEventListener('click', () => {
+      if (panel.hidden) open();
+      else close();
+    });
+    ```
+
+    Один `AbortController` снимает оба обработчика разом, ссылки на функции хранить не нужно.
+
+    Важная деталь: обработчик на `document` добавляется **во время** того самого клика, который открыл меню. Этот клик
+    ещё всплывает и дойдёт до `document` — новый обработчик сработает на нём же. Меню не закроется только потому,
+    что `toggle` лежит внутри `menu`, и проверка `menu.contains(event.target)` это отсекает. Без неё меню закрывалось бы
+    сразу после открытия.
+  </Fragment>
+</Task>
+
+<Task title="Хелпер для делегирования" level="hard">
+  Напишите функцию `delegate(root, type, selector, handler)`. Она вешает **один** обработчик на `root` и вызывает
+  `handler`, только если событие произошло внутри элемента, подходящего под `selector`, и этот элемент лежит
+  внутри `root`. В `handler` передайте событие и найденный элемент, а `this` сделайте равным найденному элементу.
+  Функция должна возвращать функцию отписки.
+
+  ```js
+  const off = delegate(list, 'click', '.delete', function (event, button) {
+    console.log(this === button); // true
+    button.closest('li').remove();
+  });
+
+  off(); // обработчик снят
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    function delegate(root, type, selector, handler, options) {
+      function listener(event) {
+        const match = event.target.closest(selector);
+        if (!match || !root.contains(match)) return;
+
+        handler.call(match, event, match);
+      }
+
+      root.addEventListener(type, listener, options);
+
+      return () => root.removeEventListener(type, listener, options);
+    }
+    ```
+
+    Обработчик `listener` объявлен внутри `delegate`, и функция отписки замыкает именно его — ту же ссылку, что
+    ушла в `addEventListener`. Поэтому `removeEventListener` срабатывает. Передавать в него `options` важно: если
+    подписались с `capture: true`, снять можно только с тем же `capture`.
+
+    `root.contains(match)` нужен, потому что `closest` поднимается до самого корня документа и может найти
+    подходящего предка **снаружи** `root`. `handler.call(match, …)` задаёт `this` так же, как браузер задаёт его
+    обычным обработчикам — элементом, «на котором сработало».
+  </Fragment>
+</Task>
