@@ -1,0 +1,725 @@
+---
+title: Статические свойства и методы (static)
+description: Что такое static в классах, чем статический метод отличается от обычного, this внутри static, наследование и когда static нужен, а когда нет
+section: js
+order: 21
+level: middle
+tags: [static, class, constructor, objects]
+---
+
+import Callout from '@/components/blocks/Callout.tsx';
+import Quiz from '@/components/blocks/Quiz.tsx';
+import Task from '@/components/blocks/Task.astro';
+
+В уроке [Конструкторы](/learn/js/constructor) всё, что мы писали в классе, принадлежало **объектам**: у каждой машины
+своя модель, и метод `drive` вызывается у конкретной машины. Но иногда данные или действие относятся
+**к классу в целом**, а не к одному объекту: сколько всего машин создано, как создать машину из JSON.
+Для этого есть ключевое слово `static`.
+
+## 1. Что делает static
+
+Свойство или метод с `static` принадлежит **самому классу**. Обращаются к нему через имя класса,
+а не через объект:
+
+```js
+class Car {
+  static totalCars = 0; // статическое свойство — одно на весь класс
+
+  constructor(model) {
+    this.model = model; // обычное свойство — своё у каждого объекта
+    Car.totalCars++;
+  }
+
+  drive() {
+    console.log(`${this.model} едет!`); // обычный метод — вызывается у объекта
+  }
+
+  static createRandomCar() {
+    // статический метод — вызывается у класса
+    const models = ['BMW', 'Audi', 'Toyota'];
+    const randomModel = models[Math.floor(Math.random() * models.length)];
+
+    return new Car(randomModel);
+  }
+}
+
+const bmw = new Car('BMW');
+const audi = new Car('Audi');
+const randomCar = Car.createRandomCar();
+
+bmw.drive(); // 'BMW едет!'
+audi.drive(); // 'Audi едет!'
+randomCar.drive(); // например, 'Toyota едет!'
+
+console.log(Car.totalCars); // 3
+```
+
+Каждый вызов `new Car(...)` увеличивает **один общий** счётчик `Car.totalCars` — в том числе вызов внутри
+`createRandomCar`. Поэтому `Car.createRandomCar()` ещё раз, даже без сохранения результата в переменную,
+сделает счётчик равным `4`: машина создана, просто на неё никто не ссылается.
+
+| | Обычное (свойство / метод объекта) | Статическое |
+|---|---|---|
+| Кому принадлежит | каждому объекту (метод — общий через prototype) | самому классу |
+| Как обратиться | `bmw.model`, `bmw.drive()` | `Car.totalCars`, `Car.createRandomCar()` |
+| `this` внутри метода | объект, у которого вызвали | сам класс |
+| Сколько экземпляров данных | по одному на объект | один на класс |
+
+## 2. Статическое нельзя вызвать у объекта
+
+Статические члены живут на классе и **не попадают** в объекты:
+
+```js
+bmw.totalCars; // undefined — у объекта нет такого свойства
+bmw.createRandomCar(); // TypeError: bmw.createRandomCar is not a function
+```
+
+И наоборот — обычный метод нельзя вызвать у класса:
+
+```js
+Car.drive(); // TypeError: Car.drive is not a function — drive есть у объектов, а не у класса
+```
+
+Если из объекта всё-таки нужно добраться до статического, используйте имя класса или `this.constructor`:
+
+```js
+Car.totalCars; // 3
+bmw.constructor.totalCars; // 3 — constructor у объекта указывает на его класс
+```
+
+## 3. this внутри статического метода
+
+Внутри статического метода `this` — это **сам класс** (если метод вызван через точку: `Car.method()`).
+Поэтому у `this` там нет свойств объекта:
+
+```js
+class Car {
+  constructor(model) {
+    this.model = model;
+  }
+
+  static printModel() {
+    console.log(this.model); // this — класс Car, а не машина
+  }
+}
+
+const bmw = new Car('BMW');
+
+Car.printModel(); // undefined — у класса нет свойства model
+bmw.printModel(); // TypeError: bmw.printModel is not a function
+```
+
+`printModel` — пример метода, который **не должен быть статическим**: ему нужны данные конкретной машины.
+Правильно — обычный метод:
+
+```js
+class Car {
+  constructor(model) {
+    this.model = model;
+  }
+
+  printModel() {
+    console.log(this.model); // this — машина
+  }
+}
+
+new Car('BMW').printModel(); // 'BMW'
+```
+
+<Callout type="tip">
+  Простое правило: если методу нужен `this` конкретного объекта — он обычный. Если метод работает без объекта
+  (создаёт объекты, проверяет данные, считает что-то по всем объектам) — он может быть статическим.
+</Callout>
+
+Статический метод, как и обычный, теряет `this`, если его достать из класса и вызвать отдельно (подробнее —
+в уроке [Ключевое слово this](/learn/js/this)):
+
+```js
+const print = Car.printModel;
+print(); // TypeError: Cannot read properties of undefined (reading 'model')
+```
+
+## 4. Когда использовать static
+
+### Фабричные методы
+
+Статический метод, который **создаёт объекты** класса, — самый частый случай. Он даёт понятное имя способу
+создания и прячет подготовку данных:
+
+```js
+class User {
+  constructor(name, email) {
+    this.name = name;
+    this.email = email;
+  }
+
+  static fromJSON(json) {
+    const data = JSON.parse(json);
+    return new User(data.name, data.email);
+  }
+
+  static guest() {
+    return new User('Гость', null);
+  }
+}
+
+const anna = User.fromJSON('{"name":"Анна","email":"anna@example.com"}');
+const guest = User.guest();
+```
+
+`User.fromJSON(json)` читается лучше, чем `new User(...JSON.parse(json))`, а логика разбора живёт в одном месте.
+
+### Вспомогательные функции, связанные с классом
+
+Проверки и вычисления, которые относятся к теме класса, но не к конкретному объекту:
+
+```js
+class Temperature {
+  constructor(celsius) {
+    this.celsius = celsius;
+  }
+
+  static toFahrenheit(celsius) {
+    return (celsius * 9) / 5 + 32;
+  }
+
+  static isValid(celsius) {
+    return Number.isFinite(celsius) && celsius >= -273.15; // ниже абсолютного нуля не бывает
+  }
+}
+
+Temperature.toFahrenheit(100); // 212
+Temperature.isValid(-300); // false
+```
+
+### Общие данные: счётчики, кеш, настройки, константы
+
+```js
+class Order {
+  static STATUSES = ['new', 'paid', 'shipped']; // константа класса
+  static #nextId = 1; // приватное статическое поле — доступно только внутри класса
+
+  constructor(items) {
+    this.id = Order.#nextId++;
+    this.items = items;
+    this.status = 'new';
+  }
+}
+
+new Order(['хлеб']).id; // 1
+new Order(['молоко']).id; // 2
+Order.STATUSES; // ['new', 'paid', 'shipped']
+```
+
+Решётка `#` делает поле приватным: снаружи `Order.#nextId` — синтаксическая ошибка, и никто не испортит счётчик.
+
+### static во встроенных объектах
+
+Вы уже пользовались статическими методами — их много в самом языке:
+
+| Вызов | Что делает |
+|---|---|
+| `Math.max(1, 5, 3)` | `Math` — объект только со статическими методами |
+| `Number.isInteger(5)` | проверка числа |
+| `Array.from('abc')` | фабрика: создаёт массив из чего-то похожего на массив |
+| `Array.isArray(value)` | проверка, массив ли это |
+| `Object.keys(obj)` | работа с любым объектом |
+| `Promise.all([...])` | работа с несколькими промисами, см. [Промисы](/learn/js/promise) |
+| `Date.now()` | текущее время без создания объекта даты |
+
+Заметьте: ни один из этих методов не вызывается у конкретного массива или числа — `[1, 2].isArray()` не существует.
+
+## 5. Когда static не нужен
+
+- **Методу нужны данные объекта.** Как `printModel` выше — делайте обычный метод.
+- **Класс-«коробка» для функций без состояния.** Если в классе одни статические методы и нет ни конструктора,
+  ни данных, это просто набор функций. Проще экспортировать их из модуля:
+
+  ```js
+  // ✗ Класс ради группировки
+  class StringUtils {
+    static capitalize(str) {
+      return str[0].toUpperCase() + str.slice(1);
+    }
+  }
+  StringUtils.capitalize('привет');
+
+  // ✓ Обычная функция в модуле strings.js
+  export function capitalize(str) {
+    return str[0].toUpperCase() + str.slice(1);
+  }
+  ```
+
+- **Общее изменяемое состояние «на всякий случай».** Статическое свойство — по сути глобальная переменная внутри
+  класса. Его меняет любой код, и в тестах значение переходит из одного теста в другой. Храните там только то,
+  что действительно общее: счётчики, кеш, константы.
+
+## 6. static и наследование
+
+Классы можно наследовать через `extends` — дочерний класс получает методы родителя. Статические методы и свойства
+**тоже наследуются**:
+
+```js
+class ElectricCar extends Car {
+  charge() {
+    console.log(`${this.model} заряжается`);
+  }
+}
+
+ElectricCar.createRandomCar(); // работает — метод унаследован от Car
+```
+
+Но `createRandomCar` создаёт `new Car(...)`, а не электромобиль. Чтобы фабрика создавала объект того класса,
+у которого её вызвали, используйте `new this(...)` — в статическом методе `this` и есть класс:
+
+```js
+class Car {
+  constructor(model) {
+    this.model = model;
+  }
+
+  static create(model) {
+    return new this(model); // this — класс, у которого вызвали create
+  }
+}
+
+class ElectricCar extends Car {}
+
+Car.create('BMW') instanceof Car; // true
+ElectricCar.create('Tesla') instanceof ElectricCar; // true
+```
+
+<Callout type="warning">
+  С общими счётчиками наоборот: пишите `Car.totalCars++`, а не `this.totalCars++`. Если статический метод с
+  `this.totalCars++` вызовут у `ElectricCar`, JavaScript прочитает унаследованное значение, а запишет новое
+  **собственное** свойство `ElectricCar.totalCars` — счётчики разойдутся.
+</Callout>
+
+## 7. static в функциях-конструкторах
+
+До появления классов «статическое» делали обычным свойством функции-конструктора — функция тоже объект:
+
+```js
+function User(name) {
+  this.name = name;
+  User.count++;
+}
+
+User.count = 0; // «статическое» свойство
+User.guest = function () {
+  return new User('Гость');
+}; // «статический» метод
+
+new User('Аня');
+User.guest();
+User.count; // 2
+```
+
+`static` в классе делает то же самое, только записывается внутри класса.
+
+## Шпаргалка
+
+| Вопрос | Ответ |
+|---|---|
+| Как объявить | `static total = 0;`, `static create() {}` |
+| Как вызвать | через класс: `Car.create()` |
+| Можно ли у объекта | нет; из объекта — `Car.total` или `this.constructor.total` |
+| `this` в статическом методе | класс |
+| Наследуется ли | да; фабрики пишите через `new this(...)` |
+| Когда использовать | фабрики, проверки и вычисления по теме класса, счётчики, кеш, константы |
+| Когда не использовать | методу нужны данные объекта; класс из одних статических функций без данных |
+
+## Проверь себя
+
+<Quiz client:visible id="js/static/counter" options={['2', '3', '4', '5']} answer={2}>
+  Что выведет код?
+
+  ```js
+  class Car {
+    static totalCars = 0;
+
+    constructor(model) {
+      this.model = model;
+      Car.totalCars++;
+    }
+
+    static createRandomCar() {
+      return new Car('Toyota');
+    }
+  }
+
+  const bmw = new Car('BMW');
+  const audi = new Car('Audi');
+  Car.createRandomCar();
+  Car.createRandomCar();
+
+  console.log(Car.totalCars);
+  ```
+
+  <Fragment slot="explanation">
+    Конструктор вызывается четыре раза: два `new Car` и два — внутри `createRandomCar`. То, что результат фабрики
+    не сохранили в переменную, ничего не меняет: объект создан, счётчик увеличен.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/static/instance-access" options={['3', 'undefined', 'null', 'TypeError']} answer={1}>
+  Что вернёт `bmw.totalCars`, если `Car.totalCars` равно `3`?
+
+  <Fragment slot="explanation">
+    Статическое свойство принадлежит классу и не копируется в объекты. У `bmw` такого свойства нет — `undefined`.
+    Достучаться можно через `Car.totalCars` или `bmw.constructor.totalCars`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/static/instance-call"
+  options={["Выведет 'BMW'", 'Выведет undefined', 'TypeError: bmw.printModel is not a function', 'SyntaxError']}
+  answer={2}
+>
+  Что произойдёт?
+
+  ```js
+  class Car {
+    constructor(model) {
+      this.model = model;
+    }
+
+    static printModel() {
+      console.log(this.model);
+    }
+  }
+
+  const bmw = new Car('BMW');
+  bmw.printModel();
+  ```
+
+  <Fragment slot="explanation">
+    Статический метод есть только у класса, у объекта его нет. Вызов несуществующего метода — `TypeError`.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/static/this-is-class" options={["'BMW'", 'undefined', "'Car'", 'TypeError']} answer={1}>
+  А что выведет `Car.printModel()` для того же класса?
+
+  <Fragment slot="explanation">
+    В статическом методе `this` — это класс `Car`. Свойства `model` у класса нет, поэтому `undefined`.
+    Методу нужны данные машины — значит, он должен быть обычным, а не статическим.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/static/instance-method-on-class"
+  options={["Выведет 'undefined едет!'", 'TypeError: Car.drive is not a function', "Выведет 'Car едет!'", 'Ничего не выведет']}
+  answer={1}
+>
+  Что произойдёт?
+
+  ```js
+  class Car {
+    drive() {
+      console.log(`${this.model} едет!`);
+    }
+  }
+
+  Car.drive();
+  ```
+
+  <Fragment slot="explanation">
+    Обычные методы класса лежат в `Car.prototype` и доступны объектам, а не самому классу.
+    `Car.drive` — `undefined`, его вызов — `TypeError`.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/static/inherited-factory"
+  options={['Car', 'ElectricCar', 'undefined', 'TypeError']}
+  answer={1}
+>
+  Объектом какого класса будет `tesla`?
+
+  ```js
+  class Car {
+    constructor(model) {
+      this.model = model;
+    }
+
+    static create(model) {
+      return new this(model);
+    }
+  }
+
+  class ElectricCar extends Car {}
+
+  const tesla = ElectricCar.create('Tesla');
+  ```
+
+  <Fragment slot="explanation">
+    Статические методы наследуются, а `this` в них — класс, у которого метод вызвали. Здесь это `ElectricCar`,
+    поэтому `new this(model)` создаёт электромобиль. С `new Car(model)` получилась бы обычная машина.
+  </Fragment>
+</Quiz>
+
+<Quiz
+  client:visible
+  id="js/static/when-to-use"
+  options={[
+    'Метод, который выводит модель конкретной машины',
+    'Метод, который создаёт машину из JSON',
+    'Метод, который меняет цвет конкретной машины',
+    'Метод, который возвращает пробег этой машины',
+  ]}
+  answer={1}
+>
+  Какой метод лучше сделать статическим?
+
+  <Fragment slot="explanation">
+    Для создания объекта из JSON не нужен существующий объект — это фабрика, её вызывают у класса: `Car.fromJSON(json)`.
+    Остальным методам нужны данные конкретной машины, они обычные.
+  </Fragment>
+</Quiz>
+
+<Quiz client:visible id="js/static/function-constructor" options={['0', '1', '2', 'undefined']} answer={2}>
+  Что вернёт `User.count`?
+
+  ```js
+  function User(name) {
+    this.name = name;
+    User.count++;
+  }
+
+  User.count = 0;
+
+  new User('Аня');
+  new User('Иван');
+  ```
+
+  <Fragment slot="explanation">
+    Функция — тоже объект, и ей можно добавить свойство. Так «статические» свойства делали до классов:
+    оба вызова `new User` увеличили общий `User.count` до `2`.
+  </Fragment>
+</Quiz>
+
+## Задачи
+
+<Task title="Исправьте printModel" level="easy">
+  Метод должен выводить модель машины, но не работает. Объясните почему и исправьте.
+
+  ```js
+  class Car {
+    constructor(model) {
+      this.model = model;
+    }
+
+    static printModel() {
+      console.log(this.model);
+    }
+  }
+
+  const bmw = new Car('BMW');
+  bmw.printModel(); // TypeError
+  Car.printModel(); // undefined
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    class Car {
+      constructor(model) {
+        this.model = model;
+      }
+
+      printModel() {
+        console.log(this.model);
+      }
+    }
+
+    new Car('BMW').printModel(); // 'BMW'
+    ```
+
+    Статический метод принадлежит классу: у объекта его нет (`TypeError`), а при вызове у класса `this` — сам класс,
+    у которого нет `model` (`undefined`). Методу нужны данные конкретной машины, поэтому `static` нужно убрать.
+  </Fragment>
+</Task>
+
+<Task title="Фабрика fromJSON" level="easy">
+  Добавьте классу `Product` статический метод `fromJSON(json)`, который создаёт товар из JSON-строки,
+  и статический метод `free(name)`, который создаёт товар с ценой `0`.
+
+  ```js
+  class Product {
+    constructor(name, price) {
+      this.name = name;
+      this.price = price;
+    }
+  }
+
+  const phone = Product.fromJSON('{"name":"Телефон","price":30000}');
+  phone.price; // 30000
+  phone instanceof Product; // true
+
+  Product.free('Пробник').price; // 0
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    class Product {
+      constructor(name, price) {
+        this.name = name;
+        this.price = price;
+      }
+
+      static fromJSON(json) {
+        const { name, price } = JSON.parse(json);
+        return new Product(name, price);
+      }
+
+      static free(name) {
+        return new Product(name, 0);
+      }
+    }
+    ```
+
+    `JSON.parse` возвращает обычный объект без методов класса — `fromJSON` превращает его в настоящий `Product`.
+    `free` даёт способу создания понятное имя.
+  </Fragment>
+</Task>
+
+<Task title="Уникальные id" level="medium">
+  Сделайте класс `Ticket`, который при создании выдаёт каждому билету уникальный `id`, начиная с `1`.
+  Счётчик не должен быть доступен снаружи. Добавьте статический метод `issued()`, который возвращает,
+  сколько билетов выдано.
+
+  ```js
+  const a = new Ticket('Концерт');
+  const b = new Ticket('Театр');
+
+  a.id; // 1
+  b.id; // 2
+  Ticket.issued(); // 2
+  Ticket.nextId; // undefined — счётчик снаружи не виден
+  ```
+
+  <Fragment slot="hint">
+    Используйте приватное статическое поле: `static #nextId = 1`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    class Ticket {
+      static #nextId = 1;
+
+      constructor(title) {
+        this.id = Ticket.#nextId++;
+        this.title = title;
+      }
+
+      static issued() {
+        return Ticket.#nextId - 1;
+      }
+    }
+    ```
+
+    `#nextId` — приватное поле класса: прочитать или изменить его можно только внутри `Ticket`.
+    Обращаемся через `Ticket.#nextId`, а не `this.#nextId`, — в конструкторе `this` — новый билет, а не класс.
+  </Fragment>
+</Task>
+
+<Task title="Кеш экземпляров" level="medium">
+  Напишите класс `Currency` со статическим методом `get(code)`. Для одного и того же кода он должен возвращать
+  **один и тот же** объект, а не создавать новый.
+
+  ```js
+  const usd1 = Currency.get('USD');
+  const usd2 = Currency.get('USD');
+  const eur = Currency.get('EUR');
+
+  usd1 === usd2; // true
+  usd1 === eur; // false
+  usd1.code; // 'USD'
+  ```
+
+  <Fragment slot="solution">
+    ```js
+    class Currency {
+      static #cache = new Map();
+
+      constructor(code) {
+        this.code = code;
+      }
+
+      static get(code) {
+        if (!Currency.#cache.has(code)) {
+          Currency.#cache.set(code, new Currency(code));
+        }
+        return Currency.#cache.get(code);
+      }
+    }
+    ```
+
+    Кеш — общие для класса данные, поэтому он статический. `Map` хранит объект для каждого кода,
+    а `get` создаёт новый, только если такого ещё нет. Так экономят память и получают возможность сравнивать
+    валюты через `===` — помните, объекты сравниваются по ссылке (урок [typeof, null, undefined и сравнение](/learn/js/types-comparison)).
+  </Fragment>
+</Task>
+
+<Task title="Фабрика для наследников" level="hard">
+  Есть базовый класс `Shape` и два наследника. Добавьте в `Shape` один статический метод `create(...args)`,
+  который создаёт объект **того класса, у которого его вызвали**, и счётчик `Shape.created` — сколько фигур
+  создано всего, через любые классы.
+
+  ```js
+  class Shape {
+    constructor(name) {
+      this.name = name;
+    }
+  }
+
+  class Circle extends Shape {
+    constructor(radius) {
+      super('круг');
+      this.radius = radius;
+    }
+  }
+
+  class Square extends Shape {
+    constructor(side) {
+      super('квадрат');
+      this.side = side;
+    }
+  }
+
+  Circle.create(5) instanceof Circle; // true
+  Square.create(3).side; // 3
+  Shape.created; // 2
+  Circle.created; // 2 — один общий счётчик
+  ```
+
+  <Fragment slot="hint">
+    В статическом методе `this` — класс, у которого его вызвали, поэтому `new this(...args)` создаст нужную фигуру.
+    Счётчик увеличивайте через `Shape.created`, а не через `this.created`.
+  </Fragment>
+
+  <Fragment slot="solution">
+    ```js
+    class Shape {
+      static created = 0;
+
+      constructor(name) {
+        this.name = name;
+        Shape.created++;
+      }
+
+      static create(...args) {
+        return new this(...args);
+      }
+    }
+    ```
+
+    `super('круг')` в конструкторе наследника вызывает конструктор `Shape`, поэтому счётчик растёт при создании
+    любой фигуры — даже через `new Circle(5)` без фабрики. `Circle.created` читает унаследованное свойство `Shape`
+    и тоже равно `2`. Писать `this.created++` в конструкторе нельзя: там `this` — новая фигура, и счётчик появился бы
+    у объекта, а не у класса.
+  </Fragment>
+</Task>
