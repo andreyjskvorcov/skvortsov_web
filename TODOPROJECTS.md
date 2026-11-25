@@ -37,6 +37,8 @@
 
 От простого к сложному — каждое следующее приложение переиспользует решения предыдущего:
 
+Промпты для Figma по всем проектам — [docs/figma/](docs/figma/README.md): сначала design-system и app-shell, потом проект.
+
 [ui kit v1 макет](https://www.figma.com/design/gS4NA0efMUIUKXJJu7taAn/skvortsov.web-%E2%80%94-Design-System---UI-Kit?node-id=0-1&p=f&t=Rg3rlY9fo6EuF9Q9-0)
 
 1. **Лендинг разработчика** — главная skvortsov.web: визитка, с которой начинается знакомство с сайтом и проектами. ([макет](https://www.figma.com/design/NV93nnoJ8uTYvRdFumQf5o/Portfolio-landing?node-id=0-1&p=f&t=U3o57hwM77xGwSKL-0))
@@ -71,7 +73,7 @@
 
 **Качество**
 
-- [ ] Дизайн в Figma на основе нашей дизайн-системы, вёрстка по макету — промпт: [docs/figma-landing-prompt.md](docs/figma-landing-prompt.md)
+- [ ] Дизайн в Figma на основе нашей дизайн-системы, вёрстка по макету — промпт: [docs/figma/01-landing-developer.md](docs/figma/01-landing-developer.md)
 - [ ] Адаптив от 360px, тёмная тема от токенов
 - [ ] Анимации на GSAP: вступление hero, появление секций при прокрутке, с `prefers-reduced-motion`
 - [ ] Минимум JS: секции — статичный Astro, острова — только там, где нужна интерактивность (форма)
@@ -82,6 +84,8 @@
 ## 2. Банковское мини-приложение
 
 `apps/bank-*` · стек: React + Zustand · сложность: высокая
+
+Дизайн в Figma — промпт: [docs/figma/02-bank.md](docs/figma/02-bank.md)
 
 Главный экран: карты и счета с балансом, последние операции, быстрые переводы.
 
@@ -110,6 +114,8 @@
 
 `apps/payments-*` · стек: Vue + Pinia · сложность: средняя
 
+Дизайн в Figma — промпт: [docs/figma/03-payments.md](docs/figma/03-payments.md)
+
 Оплата услуг: ЖКХ, связь, интернет, штрафы, налоги.
 
 **Функции**
@@ -137,6 +143,8 @@
 
 `apps/bookstore-*` · стек: Vue + Pinia + vue-router · сложность: средняя
 
+Дизайн в Figma — промпт: [docs/figma/04-bookstore.md](docs/figma/04-bookstore.md)
+
 **Функции**
 
 - [ ] Каталог: книги и комиксы, жанры, серии, авторы, издательства
@@ -163,6 +171,8 @@
 ## 5. Focusify — фокус-таймер с задачами
 
 `apps/focusify-*` · стек: React + Zustand · сложность: начальная
+
+Дизайн в Figma — промпт: [docs/figma/05-focusify.md](docs/figma/05-focusify.md)
 
 Работа по технике Pomodoro: фокус 25 минут → перерыв 5 → после четырёх циклов длинный перерыв.
 
@@ -192,6 +202,8 @@
 
 `apps/games-*` · стек: React + Redux Toolkit / RTK Query · сложность: высокая
 
+Дизайн в Figma — промпт: [docs/figma/06-games.md](docs/figma/06-games.md)
+
 Учебный проект: только виртуальная валюта, без реальных денег и ставок.
 
 **Функции**
@@ -220,6 +232,8 @@
 
 `apps/grocery-*` · стек: Vue + Pinia · сложность: средняя
 
+Дизайн в Figma — промпт: [docs/figma/07-grocery.md](docs/figma/07-grocery.md)
+
 **Функции**
 
 - [ ] Каталог: категории, акции, единицы измерения (шт, кг, л)
@@ -245,6 +259,8 @@
 ## 8. Motion-витрина — вёрстка и анимации на GSAP
 
 `apps/motion-showcase` · стек: Vite + TypeScript + GSAP, без фреймворка · сложность: средняя
+
+Дизайн в Figma — промпт: [docs/figma/08-motion-showcase.md](docs/figma/08-motion-showcase.md)
 
 Одностраничная история с прокруткой (например, о вымышленной студии, бренде или продукте), которая показывает
 чистую адаптивную вёрстку и анимации. Обязательный минимум (авторизация, wallet и т. д.) сюда не относится:
@@ -290,6 +306,8 @@ GSAP вместе со всеми плагинами (ScrollTrigger, SplitText, 
 ## 9. Лендинги
 
 Статичные страницы на Astro, без авторизации и wallet. Цель — вёрстка, анимации, производительность.
+
+Дизайн в Figma — промпты: [docs/figma/09-landing-focusify.md](docs/figma/09-landing-focusify.md), [docs/figma/10-landing-course.md](docs/figma/10-landing-course.md)
 
 **Для каждого лендинга**
 
